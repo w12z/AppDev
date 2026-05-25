@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:file_hub/core/core_hub.dart';
-import 'package:file_hub/main.dart';
+import 'package:z_hub/core/core_hub.dart';
+import 'package:z_hub/main.dart';
 
 void main() {
   testWidgets('App renders with navigation tabs', (tester) async {
@@ -12,7 +12,7 @@ void main() {
           ChangeNotifierProvider(create: (_) => FileBrowserProvider()),
           ChangeNotifierProvider(create: (_) => QuickAccessProvider()),
         ],
-        child: const FileHubApp(),
+        child: const ZHubApp(),
       ),
     );
     await tester.pump();
