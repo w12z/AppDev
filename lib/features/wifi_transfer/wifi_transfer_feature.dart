@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 import '../../core/feature_interface.dart';
+import 'wifi_transfer.dart';
 
-/// Wi-Fi 局域网文件传输模块
 class WifiTransferFeature extends AppFeature {
   @override
   String get id => 'wifi_transfer';
@@ -18,18 +21,31 @@ class WifiTransferFeature extends AppFeature {
   @override
   bool get enabledByDefault => false;
 
+  late WifiTransferProvider _provider;
+
   @override
   Widget buildPage(BuildContext context) {
-    return const Center(child: Text('Wi-Fi 传输 - 待实现'));
+    return ChangeNotifierProvider.value(
+      value: _provider,
+      child: const WifiTransferPage(),
+    );
   }
 
   @override
   Future<void> init() async {
-    // TODO: 启动 HTTP 服务器
+    final dir = await getApplicationDocumentsDirectory();
+    final transferDir = Directory('${dir.path}${Platform.pathSeparator}transfer');
+    if (!await transferDir.exists()) {
+      await transferDir.create(recursive: true);
+    }
+
+    _provider = WifiTransferProvider(
+      server: WifiTransferServer(port: 8686, serveDirectory: transferDir.path),
+    );
   }
 
   @override
   Future<void> dispose() async {
-    // TODO: 停止 HTTP 服务器
+    _provider.dispose();
   }
 }
