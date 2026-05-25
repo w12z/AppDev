@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../../core/feature_interface.dart';
+import 'pages/music_library_page.dart';
+import 'widgets/mini_player.dart';
 
-/// 音乐播放模块
 class MusicPlayerFeature extends AppFeature {
   @override
   String get id => 'music_player';
@@ -16,20 +18,31 @@ class MusicPlayerFeature extends AppFeature {
   String get iconAsset => 'assets/icons/music.svg';
 
   @override
-  bool get enabledByDefault => false;
+  bool get enabledByDefault => true;
 
   @override
   Widget buildPage(BuildContext context) {
-    return const Center(child: Text('音乐播放 - 待实现'));
+    return Stack(
+      children: [
+        const MusicLibraryPage(),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: const MiniPlayer(),
+        ),
+      ],
+    );
   }
 
   @override
   Future<void> init() async {
-    // TODO: 初始化音频会话
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
   }
 
   @override
   Future<void> dispose() async {
-    // TODO: 释放音频资源
+    // Resources are disposed by Providers
   }
 }
