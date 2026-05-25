@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'file_item.dart';
+import 'feature_registry.dart';
 
 // ============================================================
 // Services
@@ -700,6 +701,61 @@ class QuickAccessPage extends StatelessWidget {
             child: Text(value, maxLines: maxLines, overflow: TextOverflow.ellipsis),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 模块管理页面
+// ============================================================
+
+class ModuleManagerPage extends StatelessWidget {
+  const ModuleManagerPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final registry = context.watch<FeatureRegistry>();
+    final features = registry.allFeatures;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('模块管理')),
+      body: ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: features.length,
+        itemBuilder: (context, index) {
+          final f = features[index];
+          final enabled = registry.isEnabled(f.id);
+
+          return Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundColor:
+                    enabled ? Theme.of(context).colorScheme.primaryContainer : Colors.grey.shade200,
+                child: Icon(
+                  enabled ? Icons.extension : Icons.extension_off,
+                  size: 20,
+                  color: enabled
+                      ? Theme.of(context).colorScheme.onPrimaryContainer
+                      : Colors.grey,
+                ),
+              ),
+              title: Text(f.name),
+              subtitle: Text(f.description, maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: Switch(
+                value: enabled,
+                onChanged: (v) async {
+                  if (v) {
+                    await registry.enable(f.id);
+                  } else {
+                    await registry.disable(f.id);
+                  }
+                },
+              ),
+            ),
+          );
+        },
       ),
     );
   }

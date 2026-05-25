@@ -30,6 +30,7 @@ class FileHubApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => FileBrowserProvider()),
         ChangeNotifierProvider(create: (_) => QuickAccessProvider()),
+        ChangeNotifierProvider.value(value: FeatureRegistry()),
       ],
       child: MaterialApp(
         title: 'File Hub',
@@ -57,7 +58,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final features = FeatureRegistry().enabledFeatures;
+    final features = context.watch<FeatureRegistry>().enabledFeatures;
 
     final pages = <Widget>[
       const FileBrowserPage(),
@@ -89,6 +90,25 @@ class _HomePageState extends State<HomePage> {
     }
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('File Hub'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.extension),
+            tooltip: '模块管理',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ChangeNotifierProvider.value(
+                    value: FeatureRegistry(),
+                    child: const ModuleManagerPage(),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
       body: IndexedStack(
         index: _currentIndex,
         children: pages,
