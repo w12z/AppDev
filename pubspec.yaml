@@ -1,5 +1,5 @@
-name: file_hub
-description: A simplified Readdle Documents clone - WiFi file transfer, file categorization & quick access.
+name: z_hub
+description: ZHub - 多模块文件管理器，WiFi 快传 + 文件管理
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -50,4 +50,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets: []
+  assets:
+    - assets/icons/

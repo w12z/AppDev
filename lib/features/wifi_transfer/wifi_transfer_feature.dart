@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../../core/feature_interface.dart';
 import 'wifi_transfer.dart';
@@ -19,13 +21,7 @@ class WifiTransferFeature extends AppFeature {
   @override
   bool get enabledByDefault => false;
 
-  late final WifiTransferProvider _provider;
-
-  WifiTransferFeature() {
-    _provider = WifiTransferProvider(
-      server: WifiTransferServer(port: 8080, serveDirectory: ''),
-    );
-  }
+  late WifiTransferProvider _provider;
 
   @override
   Widget buildPage(BuildContext context) {
@@ -36,7 +32,17 @@ class WifiTransferFeature extends AppFeature {
   }
 
   @override
-  Future<void> init() async {}
+  Future<void> init() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final transferDir = Directory('${dir.path}${Platform.pathSeparator}transfer');
+    if (!await transferDir.exists()) {
+      await transferDir.create(recursive: true);
+    }
+
+    _provider = WifiTransferProvider(
+      server: WifiTransferServer(port: 8686, serveDirectory: transferDir.path),
+    );
+  }
 
   @override
   Future<void> dispose() async {

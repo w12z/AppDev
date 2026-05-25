@@ -1,15 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mime/mime.dart';
 import 'package:provider/provider.dart';
 import 'package:shelf/shelf.dart' as shelf;
 // ignore: unused_import — 实现路由时使用
 import 'package:shelf/shelf_io.dart' as io;
-// ignore: unused_import — 实现路由时使用
-import 'package:shelf_router/shelf_router.dart';
-// ignore: unused_import — 实现静态文件时使用
-import 'package:shelf_static/shelf_static.dart';
+import 'package:shelf_router/shelf_router.dart' as shelf_router;
 
 export 'wifi_transfer_feature.dart';
 
@@ -24,7 +23,7 @@ enum TransferStatus { pending, transferring, completed, failed }
 class TransferTask {
   final String id;
   final String fileName;
-  final int fileSize;
+  int fileSize;
   final TransferDirection direction;
   TransferStatus status;
   double progress;
@@ -78,10 +77,9 @@ class TransferTask {
 /// HTTP 服务端，负责启动/停止 shelf 服务、管理传输任务。
 ///
 /// 你需要实现的部分（见各方法内 TODO）：
-/// 1. 路由注册 — GET /, POST /upload, GET /files/:name
-/// 2. 本机 IP 检测 — 遍历 NetworkInterface
-/// 3. 文件接收 — 从 multipart 请求中保存文件
-/// 4. 进度回调 — 通知 WifiTransferProvider 更新 UI
+/// 1. 本机 IP 检测 — 遍历 NetworkInterface
+/// 2. HTML 上传页面 — 返回带拖拽区域的表单
+/// 3. 文件接收 — 解析 multipart，保存到 serveDirectory
 class WifiTransferServer {
   HttpServer? _httpServer;
   final int port;
@@ -92,12 +90,21 @@ class WifiTransferServer {
 
   Stream<TransferTask> get taskStream => _taskController.stream;
 
-  WifiTransferServer({this.port = 8080, required this.serveDirectory});
+  WifiTransferServer({this.port = 8686, required this.serveDirectory});
 
   bool get isRunning => _httpServer != null;
 
   Future<String> get localIP async {
-    throw UnimplementedError('localIP not implemented');
+    final interfaces = await NetworkInterface.list();
+    for (final iface in interfaces) {
+      for (final addr in iface.addresses) {
+        if (addr.type == InternetAddressType.IPv4 &&
+            !addr.isLoopback && !addr.isLinkLocal) {
+          return addr.address;
+        }
+      }
+    }
+    return '127.0.0.1';
   }
 
   Future<String> get serverUrl async {
@@ -107,7 +114,13 @@ class WifiTransferServer {
 
   Future<void> start() async {
     if (isRunning) return;
-    throw UnimplementedError('start() not implemented');
+    final router = shelf_router.Router();
+    router.get('/', _handleIndex);
+    router.post('/upload', _handleUpload);
+    final handler = const shelf.Pipeline()
+        .addMiddleware(shelf.logRequests())
+        .addHandler(router.call);
+    _httpServer = await io.serve(handler, InternetAddress.anyIPv4, port);
   }
 
   Future<void> stop() async {
@@ -115,19 +128,243 @@ class WifiTransferServer {
     _httpServer = null;
   }
 
+  /// 接收上传文件（POST /upload，multipart/form-data）
   // ignore: unused_element
   Future<shelf.Response> _handleUpload(shelf.Request request) async {
-    throw UnimplementedError('_handleUpload not implemented');
+    try {
+      final contentType = request.headers['content-type'];
+      if (contentType == null) {
+        return shelf.Response(400, body: 'Missing Content-Type');
+      }
+
+      final boundary = HeaderValue.parse(contentType).parameters['boundary'];
+      if (boundary == null) {
+        return shelf.Response(400, body: 'Missing boundary');
+      }
+
+      final transformer = MimeMultipartTransformer(boundary);
+      final parts = await transformer.bind(request.read()).toList();
+
+      String? savedName;
+      int totalBytes = 0;
+
+      for (final part in parts) {
+        final disp = part.headers['content-disposition'];
+        if (disp == null) continue;
+
+        final fileKey = _extractField(disp, 'filename');
+        if (fileKey == null || fileKey.isEmpty) continue;
+
+        final safeName = DateTime.now().millisecondsSinceEpoch.toString();
+        final ext = fileKey.contains('.') ? fileKey.substring(fileKey.lastIndexOf('.')) : '';
+        savedName = '$safeName$ext';
+
+        final file = File('$serveDirectory${Platform.pathSeparator}$savedName');
+        final sink = file.openWrite();
+
+        final task = TransferTask(
+          id: safeName,
+          fileName: fileKey,
+          fileSize: 0,
+          direction: TransferDirection.upload,
+        );
+        _taskController.add(task);
+
+        await for (final chunk in part) {
+          sink.add(chunk);
+          totalBytes += chunk.length;
+          task.bytesTransferred = totalBytes;
+          task.fileSize = totalBytes > task.fileSize ? totalBytes : task.fileSize;
+          _taskController.add(task);
+        }
+
+        await sink.close();
+
+        task.status = TransferStatus.completed;
+        task.progress = 1.0;
+        _taskController.add(task);
+        break; // 只处理第一个文件
+      }
+
+      if (savedName == null) {
+        return shelf.Response(400, body: 'No file uploaded');
+      }
+
+      return shelf.Response.ok(
+        jsonEncode({'ok': true, 'name': savedName}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    } catch (e) {
+      return shelf.Response(500, body: jsonEncode({'ok': false, 'error': e.toString()}));
+    }
   }
 
-  // ignore: unused_element
-  Future<shelf.Response> _handleDownload(shelf.Request request, String name) async {
-    throw UnimplementedError('_handleDownload not implemented');
+  String? _extractField(String header, String key) {
+    final regex = '$key="';
+    final start = header.indexOf(regex);
+    if (start == -1) return null;
+    final begin = start + regex.length;
+    final end = header.indexOf('"', begin);
+    if (end == -1) return null;
+    return header.substring(begin, end);
   }
 
+  /// HTML 上传页面（GET /）
   // ignore: unused_element
   Future<shelf.Response> _handleIndex(shelf.Request request) async {
-    throw UnimplementedError('_handleIndex not implemented');
+    const html = '''
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ZHub 文件传输</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
+  min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 24px;
+}
+h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+.sub { font-size: 14px; color: #94a3b8; margin-bottom: 32px; }
+.drop-zone {
+  width: 100%; max-width: 420px;
+  border: 2px dashed #475569;
+  border-radius: 16px;
+  padding: 48px 24px;
+  text-align: center;
+  transition: border-color .2s, background .2s;
+  cursor: pointer;
+}
+.drop-zone.drag-over { border-color: #3b82f6; background: rgba(59,130,246,.08); }
+.drop-zone .icon { font-size: 48px; margin-bottom: 16px; }
+.drop-zone .label { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+.drop-zone .hint { font-size: 13px; color: #64748b; }
+input[type="file"] { display: none; }
+.status {
+  width: 100%; max-width: 420px; margin-top: 24px;
+  background: #1e293b; border-radius: 12px; padding: 16px;
+  display: none; align-items: center; gap: 12px;
+}
+.status.show { display: flex; }
+.status .file-name { flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status .file-size { font-size: 12px; color: #64748b; }
+.progress-bar {
+  width: 100%; max-width: 420px; height: 4px;
+  background: #334155; border-radius: 2px; margin-top: 8px;
+  overflow: hidden; display: none;
+}
+.progress-bar.show { display: block; }
+.progress-bar .fill {
+  height: 100%; width: 0;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+  border-radius: 2px; transition: width .2s;
+}
+.result {
+  margin-top: 12px; font-size: 14px; text-align: center; display: none;
+}
+.result.success { display: block; color: #22c55e; }
+.result.error { display: block; color: #ef4444; }
+</style>
+</head>
+<body>
+<h1>ZHub</h1>
+<p class="sub">Wi-Fi 文件传输</p>
+
+<div class="drop-zone" id="dropZone">
+  <div class="icon">&#128229;</div>
+  <div class="label">点击或拖拽文件到此处</div>
+  <div class="hint">支持任意文件类型</div>
+</div>
+<input type="file" id="fileInput" multiple>
+
+<div class="status" id="status">
+  <span class="file-name" id="fileName"></span>
+  <span class="file-size" id="fileSize"></span>
+</div>
+<div class="progress-bar" id="progressBar">
+  <div class="fill" id="progressFill"></div>
+</div>
+<div class="result" id="result"></div>
+
+<script>
+const dz = document.getElementById('dropZone');
+const input = document.getElementById('fileInput');
+const status = document.getElementById('status');
+const progressBar = document.getElementById('progressBar');
+const progressFill = document.getElementById('progressFill');
+
+dz.addEventListener('click', () => input.click());
+
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('drag-over');
+  handleFiles(e.dataTransfer.files);
+});
+
+input.addEventListener('change', () => handleFiles(input.files));
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+async function handleFiles(files) {
+  for (const file of files) {
+    document.getElementById('result').className = '';
+    status.classList.add('show');
+    document.getElementById('fileName').textContent = file.name;
+    document.getElementById('fileSize').textContent = formatSize(file.size);
+
+    const form = new FormData();
+    form.append('file', file);
+
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/upload');
+
+      await new Promise((resolve, reject) => {
+        xhr.upload.onprogress = e => {
+          if (e.lengthComputable) {
+            const pct = (e.loaded / e.total) * 100;
+            progressBar.classList.add('show');
+            progressFill.style.width = pct + '%';
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            status.classList.remove('show');
+            progressBar.classList.remove('show');
+            document.getElementById('result').className = 'success';
+            document.getElementById('result').textContent = '✓ ' + file.name + ' 上传成功';
+            resolve();
+          } else {
+            reject(new Error(xhr.responseText));
+          }
+        };
+        xhr.onerror = () => reject(new Error('网络错误'));
+        xhr.send(form);
+      });
+    } catch (err) {
+      status.classList.remove('show');
+      progressBar.classList.remove('show');
+      document.getElementById('result').className = 'error';
+      document.getElementById('result').textContent = '✗ 上传失败: ' + err.message;
+    }
+  }
+}
+</script>
+</body>
+</html>
+''';
+    return shelf.Response.ok(html, headers: {'Content-Type': 'text/html; charset=utf-8'});
   }
 
   void addTask(TransferTask task) => _taskController.add(task);

@@ -18,11 +18,11 @@ void main() async {
     await feature.init();
   }
 
-  runApp(const FileHubApp());
+  runApp(const ZHubApp());
 }
 
-class FileHubApp extends StatelessWidget {
-  const FileHubApp({super.key});
+class ZHubApp extends StatelessWidget {
+  const ZHubApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +33,7 @@ class FileHubApp extends StatelessWidget {
         ChangeNotifierProvider.value(value: FeatureRegistry()),
       ],
       child: MaterialApp(
-        title: 'File Hub',
+        title: 'ZHub',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorSchemeSeed: Colors.blue,
@@ -91,7 +91,7 @@ class _HomePageState extends State<HomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('File Hub'),
+          title: const Text('ZHub'),
         actions: [
           IconButton(
             icon: const Icon(Icons.extension),

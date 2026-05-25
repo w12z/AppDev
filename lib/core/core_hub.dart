@@ -186,7 +186,7 @@ class FileBrowserProvider extends ChangeNotifier {
   List<DirectoryEntry> get commonDirs => _commonDirs;
   bool get canGoUp => Directory(_currentPath).parent.path != _currentPath;
   String get currentName => _currentPath.isEmpty
-      ? 'File Hub'
+      ? 'ZHub'
       : FileItem.nameFromPath(_currentPath);
 
   FileBrowserProvider() {
