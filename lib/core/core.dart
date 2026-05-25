@@ -1,5 +1,4 @@
-library core;
-
 export 'feature_interface.dart';
 export 'feature_registry.dart';
-export 'core_module.dart';
+export 'file_item.dart';
+export 'core_hub.dart';

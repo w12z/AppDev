@@ -1,2 +1,1 @@
-library wifi_transfer;
-
+export 'wifi_transfer_feature.dart';

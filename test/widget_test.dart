@@ -1,22 +1,24 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:provider/provider.dart';
+import 'package:file_hub/core/core_hub.dart';
 import 'package:file_hub/main.dart';
 
 void main() {
-  testWidgets('App smoke test - renders home screen', (WidgetTester tester) async {
-    await tester.pumpWidget(const FileHubApp());
+  testWidgets('App renders with navigation tabs', (tester) async {
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => FileBrowserProvider()),
+          ChangeNotifierProvider(create: (_) => QuickAccessProvider()),
+        ],
+        child: const FileHubApp(),
+      ),
+    );
+    await tester.pump();
 
-    // 验证首页渲染了 AppBar 标题
-    expect(find.text('File Hub'), findsOneWidget);
-  });
-
-  testWidgets('Bottom navigation bar exists', (WidgetTester tester) async {
-    await tester.pumpWidget(const FileHubApp());
-
-    // 验证底部导航栏存在（Wi-Fi传输、文件、分类、快速访问）
-    expect(find.text('Wi-Fi'), findsOneWidget);
-    expect(find.text('文件'), findsOneWidget);
-    expect(find.text('分类'), findsOneWidget);
-    expect(find.text('快速访问'), findsOneWidget);
+    expect(find.text('文件'), findsWidgets);
+    expect(find.text('快速访问'), findsWidgets);
+    expect(find.byType(NavigationBar), findsOneWidget);
   });
 }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'core/feature_registry.dart';
+import 'core/core_hub.dart';
 import 'features/wifi_transfer/wifi_transfer_feature.dart';
 import 'features/pdf_viewer/pdf_viewer_feature.dart';
 import 'features/music_player/music_player_feature.dart';
@@ -24,24 +26,27 @@ class FileHubApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final features = FeatureRegistry().enabledFeatures;
-
-    return MaterialApp(
-      title: 'File Hub',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: Colors.blue,
-        useMaterial3: true,
-        brightness: Brightness.light,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => FileBrowserProvider()),
+        ChangeNotifierProvider(create: (_) => QuickAccessProvider()),
+      ],
+      child: MaterialApp(
+        title: 'File Hub',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorSchemeSeed: Colors.blue,
+          useMaterial3: true,
+          brightness: Brightness.light,
+        ),
+        home: const HomePage(),
       ),
-      home: HomePage(features: features),
     );
   }
 }
 
 class HomePage extends StatefulWidget {
-  final List<dynamic> features;
-  const HomePage({super.key, required this.features});
+  const HomePage({super.key});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -52,39 +57,46 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    // 核心 tab + 已启用模块的 tab
-    final coreTabs = <Widget>[
-      const Center(child: Text('文件浏览')),
-      const Center(child: Text('快速访问')),
-    ];
-    final coreLabels = ['文件', '快速访问'];
+    final features = FeatureRegistry().enabledFeatures;
 
-    final tabs = [...coreTabs];
-    final labels = [...coreLabels];
+    final pages = <Widget>[
+      const FileBrowserPage(),
+      const QuickAccessPage(),
+      for (final f in features) f.buildPage(context),
+    ];
+
+    final destinations = <NavigationDestination>[
+      const NavigationDestination(
+        icon: Icon(Icons.folder_outlined),
+        selectedIcon: Icon(Icons.folder),
+        label: '文件',
+      ),
+      const NavigationDestination(
+        icon: Icon(Icons.star_border),
+        selectedIcon: Icon(Icons.star),
+        label: '快速访问',
+      ),
+      for (final f in features)
+        NavigationDestination(
+          icon: const Icon(Icons.extension),
+          selectedIcon: const Icon(Icons.extension),
+          label: f.name,
+        ),
+    ];
+
+    if (_currentIndex >= pages.length) {
+      _currentIndex = 0;
+    }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('File Hub'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.extension),
-            onPressed: () {
-              // TODO: 模块管理页面
-            },
-          ),
-        ],
+      body: IndexedStack(
+        index: _currentIndex,
+        children: pages,
       ),
-      body: tabs[_currentIndex.clamp(0, tabs.length - 1)],
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (i) => setState(() => _currentIndex = i),
-        destinations: [
-          for (int i = 0; i < labels.length; i++)
-            NavigationDestination(
-              icon: Icon(i == 0 ? Icons.folder : Icons.star_border),
-              label: labels[i],
-            ),
-        ],
+        destinations: destinations,
       ),
     );
   }

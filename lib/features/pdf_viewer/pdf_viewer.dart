@@ -1,2 +1,1 @@
-library pdf_viewer;
-
+export 'pdf_viewer_feature.dart';

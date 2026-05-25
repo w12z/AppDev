@@ -1,2 +1,1 @@
-library music_player;
-
+export 'music_player_feature.dart';
