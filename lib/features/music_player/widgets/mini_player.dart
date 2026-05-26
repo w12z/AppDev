@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/player_state_provider.dart';
+import '../services/audio_player_service.dart';
 import '../pages/now_playing_page.dart';
 
 class MiniPlayer extends StatelessWidget {
@@ -8,7 +8,7 @@ class MiniPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<PlayerStateProvider>(
+    return Consumer<AudioPlayerService>(
       builder: (context, player, _) {
         final show = player.currentTrack != null;
         return AnimatedSlide(

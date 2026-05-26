@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/playlist_provider.dart';
-import '../providers/player_state_provider.dart';
+import '../services/audio_player_service.dart';
 import '../models/music_track.dart';
 import '../models/playlist.dart';
 import '../widgets/track_list_tile.dart';
@@ -145,7 +145,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                               .map((p) => MusicTrack.fromPath(p))
                               .toList();
                           if (tracks.isNotEmpty) {
-                            context.read<PlayerStateProvider>().playQueue(tracks, 0);
+                            context.read<AudioPlayerService>().playQueue(tracks, startIndex: 0);
                           }
                         },
                   icon: const Icon(Icons.play_arrow, size: 20),
@@ -161,7 +161,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                               .toList();
                           tracks.shuffle();
                           if (tracks.isNotEmpty) {
-                            context.read<PlayerStateProvider>().playQueue(tracks, 0);
+                            context.read<AudioPlayerService>().playQueue(tracks, startIndex: 0);
                           }
                         },
                   icon: const Icon(Icons.shuffle, size: 20),
@@ -234,7 +234,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       buildDefaultDragHandles: true,
       itemBuilder: (context, index) {
         final track = tracks[index];
-        final player = context.watch<PlayerStateProvider>();
+        final player = context.watch<AudioPlayerService>();
         final isPlaying = player.currentTrack == track && player.isPlaying;
 
         return Dismissible(
@@ -278,7 +278,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
             track: track,
             isPlaying: isPlaying,
             onTap: () {
-              context.read<PlayerStateProvider>().playQueue(tracks, index);
+              context.read<AudioPlayerService>().playQueue(tracks, startIndex: index);
             },
           ),
         );

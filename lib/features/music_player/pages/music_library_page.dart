@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/music_track.dart';
 import '../providers/music_library_provider.dart';
-import '../providers/player_state_provider.dart';
+import '../services/audio_player_service.dart';
 import '../widgets/track_list_tile.dart';
 
 class MusicLibraryPage extends StatefulWidget {
@@ -98,14 +98,14 @@ class _MusicLibraryPageState extends State<MusicLibraryPage> {
             itemCount: tracks.length,
             itemBuilder: (context, index) {
               final track = tracks[index];
-              final player = context.watch<PlayerStateProvider>();
+              final player = context.watch<AudioPlayerService>();
               final isPlaying = player.currentTrack == track && player.isPlaying;
 
               return TrackListTile(
                 track: track,
                 isPlaying: isPlaying,
                 onTap: () {
-                  context.read<PlayerStateProvider>().playQueue(tracks, index);
+                  context.read<AudioPlayerService>().playQueue(tracks, startIndex: index);
                   context.read<MusicLibraryProvider>().addToRecent(track);
                 },
                 onMore: () => _showTrackMenu(context, track),
@@ -125,14 +125,14 @@ class _MusicLibraryPageState extends State<MusicLibraryPage> {
         onPlay: (track, all) {
           final tracks = all.cast<MusicTrack>().toList();
           final idx = tracks.indexOf(track as MusicTrack);
-          context.read<PlayerStateProvider>().playQueue(tracks, idx);
+          context.read<AudioPlayerService>().playQueue(tracks, startIndex: idx);
         },
       ),
     );
   }
 
   void _showTrackMenu(BuildContext context, track) {
-    final player = context.read<PlayerStateProvider>();
+    final player = context.read<AudioPlayerService>();
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
