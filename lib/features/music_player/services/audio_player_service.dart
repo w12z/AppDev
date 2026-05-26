@@ -3,25 +3,49 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
 import '../models/music_track.dart';
-import 'audio_session_monitor.dart';
+import 'package:flutter/services.dart';
 
-enum PlayMode { sequential, shuffle, repeatOne, repeatAll }
+
+enum PlayMode { sequential, shuffle, repeatOne, repeatPlaylist, repeatAll }
 
 enum AudioInterruptMode { pause, duck }
 
 class AudioPlayerService extends ChangeNotifier {
   static final AudioPlayerService instance = AudioPlayerService._();
   AudioPlayerService._() {
-    AudioSessionMonitor.instance.start();
+    _started = true;
     _startUnifiedPolling();
+  }
+
+  static const _audioChannel = MethodChannel('com.filehub/audio_focus');
+  bool _audioSessionStarted = false;
+  set _started(bool v) => _audioSessionStarted = v;
+
+  Future<bool> _hasOtherAudio() async {
+    if (!_audioSessionStarted) return false;
+    try {
+      return await _audioChannel.invokeMethod<bool>('hasOtherAudio') ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   AudioSource? _currentSource;
   SoundHandle? _currentHandle;
 
-  final _queue = <MusicTrack>[];
-  var _currentIndex = -1;
-  var _playMode = PlayMode.sequential;
+  final _queuePlaylists = <QueuePlaylist>[];
+  var _activePlaylistIndex = -1;
+  QueuePlaylist? get _activePlaylist =>
+      _activePlaylistIndex >= 0 && _activePlaylistIndex < _queuePlaylists.length
+          ? _queuePlaylists[_activePlaylistIndex]
+          : null;
+  List<MusicTrack> get _queue => _activePlaylist?.tracks ?? <MusicTrack>[];
+  int get _currentIndex => _activePlaylist?.currentTrackIndex ?? -1;
+  set _currentIndex(int value) {
+    if (_activePlaylist != null) _activePlaylist!.currentTrackIndex = value;
+  }
+
+  var _playMode = PlayMode.repeatPlaylist;
   var _interruptMode = AudioInterruptMode.pause;
   List<int> _shuffleOrder = [];
   int _shufflePosition = -1;
@@ -36,6 +60,8 @@ class AudioPlayerService extends ChangeNotifier {
       _currentIndex >= 0 && _currentIndex < _queue.length ? _queue[_currentIndex] : null;
 
   List<MusicTrack> get queue => List.unmodifiable(_queue);
+  List<QueuePlaylist> get queuePlaylists => List.unmodifiable(_queuePlaylists);
+  int get activePlaylistIndex => _activePlaylistIndex;
   PlayMode get playMode => _playMode;
   AudioInterruptMode get interruptMode => _interruptMode;
   int? get currentIndex => _currentIndex >= 0 ? _currentIndex : null;
@@ -59,7 +85,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   AudioPlayerService({AudioInterruptMode initialInterruptMode = AudioInterruptMode.pause}) {
     _interruptMode = initialInterruptMode;
-    AudioSessionMonitor.instance.start();
+    _started = true;
     _startUnifiedPolling();
   }
 
@@ -105,6 +131,10 @@ class AudioPlayerService extends ChangeNotifier {
           _position = pos;
           notifyListeners();
         }
+        // Periodic position save for playlist switching
+        if (_tickCount % 20 == 0 && _activePlaylist != null) {
+          _activePlaylist!.savedPosition = _position;
+        }
         // Detect end of track
         if (_duration > Duration.zero && pos >= _duration - const Duration(milliseconds: 200)) {
           _onTrackComplete();
@@ -115,7 +145,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   void _checkAudioSession() {
     try {
-      AudioSessionMonitor.instance.hasOtherAudio().then((hasOther) {
+      _hasOtherAudio().then((hasOther) {
         if (hasOther != _otherAudioPlaying) {
           _otherAudioPlaying = hasOther;
           if (_currentHandle != null) {
@@ -209,16 +239,25 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> stop() async {
     _cleanupCurrent();
-    _currentIndex = -1;
+    _activePlaylistIndex = -1;
+    _queuePlaylists.clear();
     _shufflePosition = -1;
     notifyListeners();
   }
 
   Future<void> seek(Duration pos) async {
     if (_currentHandle == null) return;
-    SoLoud.instance.seek(_currentHandle!, pos);
-    _position = pos;
-    notifyListeners();
+    final maxSeek = _duration > const Duration(seconds: 1)
+        ? _duration - const Duration(milliseconds: 500)
+        : Duration.zero;
+    Duration clamped = pos;
+    if (clamped < Duration.zero) clamped = Duration.zero;
+    if (clamped > maxSeek) clamped = maxSeek;
+    try {
+      SoLoud.instance.seek(_currentHandle!, clamped);
+      _position = clamped;
+      notifyListeners();
+    } catch (_) {}
   }
 
   Future<void> setVolume(double v) async {
@@ -246,8 +285,10 @@ class AudioPlayerService extends ChangeNotifier {
   // ── Queue management ──
 
   Future<void> playQueue(List<MusicTrack> tracks, {int startIndex = 0}) async {
-    _queue.clear();
-    _queue.addAll(tracks);
+    _queuePlaylists.clear();
+    final qp = QueuePlaylist(name: '所有音频', tracks: tracks);
+    _queuePlaylists.add(qp);
+    _activePlaylistIndex = 0;
     _rebuildShuffleOrder();
     notifyListeners();
 
@@ -257,13 +298,64 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   void playPlaylist(List<MusicTrack> tracks) {
-    _queue.clear();
-    _queue.addAll(tracks);
+    _queuePlaylists.clear();
+    final qp = QueuePlaylist(name: '所有音频', tracks: tracks);
+    _queuePlaylists.add(qp);
+    _activePlaylistIndex = 0;
     _rebuildShuffleOrder();
     notifyListeners();
     if (tracks.isNotEmpty) {
       _loadAndPlayTrack(0);
     }
+  }
+
+  Future<void> addPlaylistToQueue(String name, List<MusicTrack> tracks) async {
+    if (tracks.isEmpty) return;
+    final qp = QueuePlaylist(name: name, tracks: tracks);
+    _queuePlaylists.add(qp);
+    _activePlaylistIndex = _queuePlaylists.length - 1;
+    _rebuildShuffleOrder();
+    notifyListeners();
+    await _loadAndPlayTrack(0);
+  }
+
+  Future<void> switchToPlaylist(int newIndex) async {
+    if (newIndex < 0 || newIndex >= _queuePlaylists.length) return;
+    if (newIndex == _activePlaylistIndex) return;
+    if (_activePlaylist != null) {
+      _activePlaylist!.savedPosition = _position;
+    }
+    _activePlaylistIndex = newIndex;
+    _rebuildShuffleOrder();
+    final qp = _activePlaylist!;
+    if (qp.currentTrackIndex >= 0 && qp.currentTrackIndex < qp.tracks.length) {
+      await _loadAndPlayTrack(qp.currentTrackIndex);
+      if (qp.savedPosition > Duration.zero) {
+        seek(qp.savedPosition);
+      }
+    }
+    notifyListeners();
+  }
+
+  void removePlaylistFromQueue(int index) {
+    if (index < 0 || index >= _queuePlaylists.length) return;
+    final wasActive = index == _activePlaylistIndex;
+    _queuePlaylists.removeAt(index);
+    if (_queuePlaylists.isEmpty) {
+      stop();
+      return;
+    }
+    if (wasActive) {
+      _activePlaylistIndex = index.clamp(0, _queuePlaylists.length - 1);
+      _rebuildShuffleOrder();
+      if (_activePlaylist!.currentTrackIndex >= 0 &&
+          _activePlaylist!.currentTrackIndex < _activePlaylist!.tracks.length) {
+        _loadAndPlayTrack(_activePlaylist!.currentTrackIndex);
+      }
+    } else if (index < _activePlaylistIndex) {
+      _activePlaylistIndex--;
+    }
+    notifyListeners();
   }
 
   Future<void> playAtIndex(int index) async {
@@ -272,9 +364,11 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   void moveTrack(int from, int to) {
-    if (from < 0 || from >= _queue.length || to < 0 || to >= _queue.length) return;
-    final track = _queue.removeAt(from);
-    _queue.insert(to, track);
+    if (_activePlaylist == null) return;
+    final tracks = _activePlaylist!.tracks;
+    if (from < 0 || from >= tracks.length || to < 0 || to >= tracks.length) return;
+    final track = tracks.removeAt(from);
+    tracks.insert(to, track);
     if (_currentIndex == from) {
       _currentIndex = to;
     } else if (from < _currentIndex && to >= _currentIndex) {
@@ -287,15 +381,17 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   void removeFromQueue(int index) {
-    if (index < 0 || index >= _queue.length) return;
-    _queue.removeAt(index);
+    if (_activePlaylist == null) return;
+    final tracks = _activePlaylist!.tracks;
+    if (index < 0 || index >= tracks.length) return;
+    tracks.removeAt(index);
     if (index < _currentIndex) {
       _currentIndex--;
     } else if (index == _currentIndex) {
-      if (_queue.isEmpty) {
+      if (tracks.isEmpty) {
         _currentIndex = -1;
         _cleanupCurrent();
-      } else if (_currentIndex >= _queue.length) {
+      } else if (_currentIndex >= tracks.length) {
         _loadAndPlayTrack(0);
       } else {
         _loadAndPlayTrack(_currentIndex);
@@ -309,16 +405,32 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   void addToQueue(MusicTrack track) {
-    _queue.add(track);
+    if (_activePlaylist == null) return;
+    _activePlaylist!.tracks.add(track);
     _rebuildShuffleOrder();
     notifyListeners();
   }
 
   void insertNext(MusicTrack track) {
-    final insertAt = (_currentIndex + 1).clamp(0, _queue.length);
-    _queue.insert(insertAt, track);
+    if (_activePlaylist == null) return;
+    final tracks = _activePlaylist!.tracks;
+    final insertAt = (_currentIndex + 1).clamp(0, tracks.length);
+    tracks.insert(insertAt, track);
     _rebuildShuffleOrder();
     notifyListeners();
+  }
+
+  void replaceTrackInQueue(String oldPath, MusicTrack newTrack) {
+    bool changed = false;
+    for (final qp in _queuePlaylists) {
+      for (int i = 0; i < qp.tracks.length; i++) {
+        if (qp.tracks[i].path == oldPath) {
+          qp.tracks[i] = newTrack;
+          changed = true;
+        }
+      }
+    }
+    if (changed) notifyListeners();
   }
 
   // ── Play mode ──
@@ -363,7 +475,7 @@ class AudioPlayerService extends ChangeNotifier {
     }
     final next = _currentIndex + 1;
     if (next >= _queue.length) {
-      return _playMode == PlayMode.repeatAll ? 0 : -1;
+      return _playMode == PlayMode.repeatPlaylist ? 0 : -1;
     }
     return next;
   }
@@ -424,12 +536,19 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   void _onTrackComplete() {
+    if (!_isPlaying) return; // guard against re-trigger
     _isPlaying = false;
     notifyListeners();
     final next = _nextIndex;
     if (next == -1) {
-      _currentIndex = -1;
-      notifyListeners();
+      if (_playMode == PlayMode.repeatAll) {
+        if (_activePlaylistIndex < _queuePlaylists.length - 1) {
+          switchToPlaylist(_activePlaylistIndex + 1);
+        } else {
+          switchToPlaylist(0);
+        }
+      }
+      // sequential: stay on last track, paused
     } else {
       _loadAndPlayTrack(next);
     }

@@ -94,6 +94,66 @@ flutter analyze
 
 ## 更新日志
 
+### 2026-05-26 — 全盘扫描 + 多歌单卡片队列 + 文件精简
+
+**新增功能（7项）**
+
+| # | 功能 | 说明 |
+|---|------|------|
+| ① | 全盘音乐扫描 | Windows 盘符枚举 (A:\~Z:\)，系统目录黑名单，后台 Isolate 异步扫描 |
+| ② | SQLite 扫描缓存 | scan_cache 表持久化，重启即加载，增量扫描跳过已缓存文件 |
+| ③ | 歌单管理分区布局 | MusicLibraryPage 重构为「所有音频」文件夹 +「我的歌单」分区 |
+| ④ | 多歌单叠放卡片队列 | QueuePlaylist 运行时模型，Stack 卡片堆中心+左右各2层，拖拽切换歌单 |
+| ⑤ | 歌单循环 / 全部循环 | repeatPlaylist 仅循环当前歌单，repeatAll 推进到下一歌单后回到首个 |
+| ⑥ | 曲目重命名联动 | 磁盘文件 → SQLite 缓存 → 歌单引用 → 播放队列 四步同步更新 |
+| ⑦ | 批量添加到歌单 + 加入队列 | addToMultiplePlaylists 支持一曲多选歌单；播放详情页「加入队列」按钮 |
+
+**代码简化（4项）**
+
+| # | 优化项 | 改动前 | 改动后 | 收益 |
+|---|--------|--------|--------|------|
+| ① | 删除孤立页面 | playlist_list_page.dart 独立存在但无导航入口 | 歌单管理已整合进 music_library_page.dart | **-200 行，-1 文件** |
+| ② | 合并音频焦点监控 | audio_session_monitor.dart 31行独立文件 | 内联到 audio_player_service.dart | **-31 行，-1 文件** |
+| ③ | 合并设置存储 | settings_repository.dart 64行中间层 | 内联到 music_player_settings.dart | **-64 行，-1 文件** |
+| ④ | 合并模型文件 | playlist.dart 79行独立模型 | Playlist + QueuePlaylist 并入 music_track.dart | **-79 行，-1 文件** |
+
+**漏洞修复（6项）**
+
+| # | 问题 | 修复 |
+|---|------|------|
+| ① | 进度条拖到底触发 SoLoud 参数异常崩溃 | seek() 内 clamp 位置至 duration-500ms + try-catch 防护 |
+| ② | flutter_soloud 插件 DLL 未构建 | pubspec.yaml 中 win32audio/flutter_soloud 误放入 dependency_overrides → 移回 dependencies |
+| ③ | sqlite3 3.x native assets 下载失败导致构建失败 | sqlite3 覆盖为 2.4.0 + sqflite_common_ffi 锁定 2.3.2 |
+| ④ | 扫描按钮在「所有音频」视图不可见 | 移除 `if (!_showAllAudio)` 条件限制 |
+| ⑤ | 顺序模式播完最后一首显示「未选择曲目」 | _onTrackComplete 保留 _currentIndex 停留在最后一首，添加 `if (!_isPlaying) return` 防重入守卫 |
+| ⑥ | 卡片堆右侧卡片覆盖上层左侧卡片 | Stack children 按距中心距离排序，中心顶层 → ±1 → ±2 |
+
+**文件变更**
+
+| 操作 | 文件 |
+|------|------|
+| ❌ 删除 | `pages/playlist_list_page.dart` |
+| ❌ 删除 | `services/audio_session_monitor.dart` |
+| ❌ 删除 | `services/settings_repository.dart` |
+| ❌ 删除 | `models/playlist.dart` |
+| ✏️ 重写 | `music_scanner.dart`（Isolate 全盘扫描 + ScanProgress 内部类 + DriveEnumerator） |
+| ✏️ 重写 | `music_library_page.dart`（分区布局 + 歌单列表 + 添加到歌单弹窗 + 扫描进度条） |
+| ✏️ 重写 | `now_playing_page.dart`（StatefulWidget + 卡片堆 Stack + 拖拽手势 + 分组队列菜单） |
+| ✏️ 重写 | `music_library_provider.dart`（缓存加载 + 扫描编排 + 重命名联动） |
+| ✏️ 重写 | `music_player_settings.dart`（内联 SettingsRepository） |
+| ✏️ 修改 | `audio_player_service.dart`（_queuePlaylists 多歌单队列 + replaceTrackInQueue + 内联 AudioSessionMonitor + 默认歌单循环 + seek 加固） |
+| ✏️ 修改 | `music_track.dart`（+lastModified, copyWith, toJson/fromJson + Playlist + QueuePlaylist） |
+| ✏️ 修改 | `playlist_repository.dart`（v3 迁移 + scan_cache 表 + 所有缓存方法 + updateTrackPath） |
+| ✏️ 修改 | `playlist_provider.dart`（+addToMultiplePlaylists） |
+| ✏️ 修改 | `playlist_detail_page.dart`（+加入队列按钮） |
+| ✏️ 修改 | `playback_controls.dart`（+repeatPlaylist 模式） |
+| ✏️ 修改 | `pubspec.yaml`（sqlite3 版本覆盖修复构建） |
+| 🆕 新增 | `lib/features/music_player/README.md`（模块文档） |
+
+**总计：-4 文件（28→24），新增 7 项功能，修复 6 项漏洞。**
+
+---
+
 ### 2026-05-26 — 音乐播放器模块重构
 
 **代码简化（6项）**

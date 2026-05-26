@@ -1,9 +1,8 @@
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
-import '../models/playlist.dart';
+import '../models/music_track.dart';
 import '../models/eq_preset.dart';
-import 'settings_repository.dart';
 import 'music_player_settings.dart';
 
 class PlaylistRepository {
@@ -11,13 +10,12 @@ class PlaylistRepository {
   PlaylistRepository._();
 
   Database? _db;
-  final SettingsRepository settings = SettingsRepository();
-  late final MusicPlayerSettings playerSettings = MusicPlayerSettings(settings);
+  late final MusicPlayerSettings playerSettings = MusicPlayerSettings();
 
   Future<Database> get db async {
     if (_db != null) return _db!;
     _db = await _initDatabase();
-    settings.attach(_db!);
+    playerSettings.attach(_db!);
     return _db!;
   }
 
@@ -27,7 +25,7 @@ class PlaylistRepository {
 
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -41,6 +39,26 @@ class PlaylistRepository {
           value TEXT NOT NULL
         )
       ''');
+    }
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE scan_cache (
+          path TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          file_size INTEGER NOT NULL,
+          last_modified TEXT NOT NULL,
+          cached_at TEXT NOT NULL
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE scan_directories (
+          path TEXT PRIMARY KEY,
+          last_scanned TEXT NOT NULL
+        )
+      ''');
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_playlist_tracks_path ON playlist_tracks(track_path)',
+      );
     }
   }
 
@@ -87,6 +105,25 @@ class PlaylistRepository {
         value TEXT NOT NULL
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE scan_cache (
+        path TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        file_size INTEGER NOT NULL,
+        last_modified TEXT NOT NULL,
+        cached_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE scan_directories (
+        path TEXT PRIMARY KEY,
+        last_scanned TEXT NOT NULL
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_playlist_tracks_path ON playlist_tracks(track_path)',
+    );
   }
 
   // ── Playlist CRUD ──
@@ -279,6 +316,105 @@ class PlaylistRepository {
       'eq_presets',
       where: 'id = ? AND is_builtin = 0',
       whereArgs: [id],
+    );
+  }
+
+  // ── Scan cache ──
+
+  Future<List<MusicTrack>> getCachedTracks() async {
+    final database = await db;
+    final rows = await database.query('scan_cache', orderBy: 'title ASC');
+    return rows.map((r) => MusicTrack(
+      path: r['path'] as String,
+      title: r['title'] as String,
+      fileSize: r['file_size'] as int,
+      lastModified: DateTime.parse(r['last_modified'] as String),
+    )).toList();
+  }
+
+  Future<void> replaceCachedTracks(List<MusicTrack> tracks) async {
+    final database = await db;
+    await database.transaction((txn) async {
+      await txn.delete('scan_cache');
+      final now = DateTime.now().toIso8601String();
+      for (final t in tracks) {
+        await txn.insert('scan_cache', {
+          'path': t.path,
+          'title': t.title,
+          'file_size': t.fileSize,
+          'last_modified': (t.lastModified ?? DateTime.now()).toIso8601String(),
+          'cached_at': now,
+        });
+      }
+    });
+  }
+
+  Future<void> upsertCachedTrack(MusicTrack track) async {
+    final database = await db;
+    await database.insert(
+      'scan_cache',
+      {
+        'path': track.path,
+        'title': track.title,
+        'file_size': track.fileSize,
+        'last_modified': (track.lastModified ?? DateTime.now()).toIso8601String(),
+        'cached_at': DateTime.now().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> removeCachedTrack(String path) async {
+    final database = await db;
+    await database.delete('scan_cache', where: 'path = ?', whereArgs: [path]);
+  }
+
+  Future<Set<String>> getCachedPaths() async {
+    final database = await db;
+    final rows = await database.query('scan_cache', columns: ['path']);
+    return rows.map((r) => r['path'] as String).toSet();
+  }
+
+  Future<DateTime?> getCachedModified(String path) async {
+    final database = await db;
+    final rows = await database.query('scan_cache',
+      columns: ['last_modified'], where: 'path = ?', whereArgs: [path]);
+    if (rows.isEmpty) return null;
+    return DateTime.parse(rows.first['last_modified'] as String);
+  }
+
+  Future<void> recordScanDir(String dirPath) async {
+    final database = await db;
+    await database.insert(
+      'scan_directories',
+      {'path': dirPath, 'last_scanned': DateTime.now().toIso8601String()},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<DateTime?> getLastScanTime(String dirPath) async {
+    final database = await db;
+    final rows = await database.query('scan_directories',
+      columns: ['last_scanned'], where: 'path = ?', whereArgs: [dirPath]);
+    if (rows.isEmpty) return null;
+    return DateTime.parse(rows.first['last_scanned'] as String);
+  }
+
+  Future<void> clearScanCache() async {
+    final database = await db;
+    await database.delete('scan_cache');
+    await database.delete('scan_directories');
+  }
+
+  // ── Track path update (for rename) ──
+
+  Future<int> updateTrackPath(String oldPath, String newPath) async {
+    final database = await db;
+    return database.update(
+      'playlist_tracks',
+      {'track_path': newPath},
+      where: 'track_path = ?',
+      whereArgs: [oldPath],
     );
   }
 

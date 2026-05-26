@@ -1,6 +1,6 @@
 export 'music_player_feature.dart';
 export 'models/music_track.dart';
-export 'models/playlist.dart';
+
 export 'models/eq_preset.dart';
 export 'services/audio_player_service.dart';
 export 'services/music_scanner.dart';
@@ -11,6 +11,6 @@ export 'providers/music_library_provider.dart';
 export 'providers/playlist_provider.dart';
 export 'pages/music_library_page.dart';
 export 'pages/now_playing_page.dart';
-export 'pages/playlist_list_page.dart';
+
 export 'pages/playlist_detail_page.dart';
 export 'pages/equalizer_page.dart';

@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import '../models/playlist.dart';
+import '../models/music_track.dart';
 import '../models/eq_preset.dart';
 import '../services/playlist_repository.dart';
 
@@ -47,6 +47,13 @@ class PlaylistProvider extends ChangeNotifier {
   Future<void> addToPlaylist(int playlistId, String trackPath) async {
     await _repository.addTrack(playlistId, trackPath);
     await _refreshPlaylist(playlistId);
+  }
+
+  Future<void> addToMultiplePlaylists(String trackPath, List<int> playlistIds) async {
+    for (final id in playlistIds) {
+      await _repository.addTrack(id, trackPath);
+      await _refreshPlaylist(id);
+    }
   }
 
   Future<void> removeFromPlaylist(int playlistId, String trackPath) async {

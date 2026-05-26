@@ -42,9 +42,11 @@ dependencies:
 
   # Network info for WiFi transfer
   network_info_plus: ^6.1.2
-  sqflite_common_ffi: ^2.3.7+1
+  sqflite_common_ffi: 2.3.2
   win32audio: ^1.5.0
   flutter_soloud: ^4.0.6
+dependency_overrides:
+  sqlite3: 2.4.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

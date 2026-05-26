@@ -24,7 +24,8 @@ class PlaybackControls extends StatelessWidget {
       PlayMode.sequential => '顺序',
       PlayMode.shuffle => '随机',
       PlayMode.repeatOne => '单曲',
-      PlayMode.repeatAll => '循环',
+      PlayMode.repeatPlaylist => '歌单循环',
+      PlayMode.repeatAll => '全部循环',
     };
   }
 
@@ -33,6 +34,7 @@ class PlaybackControls extends StatelessWidget {
       PlayMode.sequential => Icons.repeat,
       PlayMode.shuffle => Icons.shuffle,
       PlayMode.repeatOne => Icons.repeat_one,
+      PlayMode.repeatPlaylist => Icons.repeat,
       PlayMode.repeatAll => Icons.repeat,
     };
   }

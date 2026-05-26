@@ -3,7 +3,8 @@ import 'package:provider/provider.dart';
 import '../providers/playlist_provider.dart';
 import '../services/audio_player_service.dart';
 import '../models/music_track.dart';
-import '../models/playlist.dart';
+
+
 import '../widgets/track_list_tile.dart';
 import '../widgets/add_to_playlist_sheet.dart';
 
@@ -166,6 +167,28 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                         },
                   icon: const Icon(Icons.shuffle, size: 20),
                   label: const Text('随机播放'),
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  onPressed: playlist.trackPaths.isEmpty
+                      ? null
+                      : () {
+                          final tracks = playlist.trackPaths
+                              .map((p) => MusicTrack.fromPath(p))
+                              .toList();
+                          if (tracks.isNotEmpty) {
+                            final player = context.read<AudioPlayerService>();
+                            player.addPlaylistToQueue(playlist.name, tracks);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('已加入队列: ${playlist.name}'),
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        },
+                  icon: const Icon(Icons.queue_play_next, size: 20),
+                  label: const Text('加入队列'),
                 ),
               ],
             ),
