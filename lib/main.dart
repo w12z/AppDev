@@ -7,7 +7,7 @@ import 'features/pdf_viewer/pdf_viewer_feature.dart';
 import 'features/music_player/music_player_feature.dart';
 import 'features/music_player/providers/music_library_provider.dart';
 import 'features/music_player/providers/playlist_provider.dart';
-import 'features/music_player/providers/player_state_provider.dart';
+import 'features/music_player/services/audio_player_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,7 +35,7 @@ class ZHubApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => QuickAccessProvider()),
         ChangeNotifierProvider(create: (_) => MusicLibraryProvider()),
         ChangeNotifierProvider(create: (_) => PlaylistProvider()),
-        ChangeNotifierProvider(create: (_) => PlayerStateProvider()),
+        ChangeNotifierProvider.value(value: AudioPlayerService.instance),
         ChangeNotifierProvider.value(value: FeatureRegistry()),
       ],
       child: MaterialApp(

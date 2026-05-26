@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
-import 'settings_repository.dart';
+import 'music_player_settings.dart';
 
 class AudioDevice {
   final int id;
@@ -19,47 +19,23 @@ class AudioRoutingService {
   static final AudioRoutingService instance = AudioRoutingService._();
   AudioRoutingService._();
 
-  SettingsRepository? _settings;
+  MusicPlayerSettings? _playerSettings;
   final _deviceChangedController = StreamController<AudioDevice?>.broadcast();
-  Timer? _pollTimer;
   int? _activeDeviceId;
 
   Stream<AudioDevice?> get onDeviceChanged => _deviceChangedController.stream;
 
-  void attachSettings(SettingsRepository settings) {
-    _settings = settings;
+  void attachSettings(MusicPlayerSettings settings) {
+    _playerSettings = settings;
   }
 
   Future<void> loadFromSettings() async {
-    if (_settings == null) return;
-    final deviceId = await _settings!.getInt('output_device_id');
-    if (deviceId != null) {
-      _activeDeviceId = deviceId;
-    }
+    if (_playerSettings == null) return;
+    _activeDeviceId = _playerSettings!.outputDeviceId;
   }
 
-  Future<void> _saveToSettings() async {
-    if (_settings == null) return;
-    if (_activeDeviceId != null) {
-      await _settings!.setInt('output_device_id', _activeDeviceId!);
-    }
-  }
-
-  void startMonitoring() {
-    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      _checkDeviceChanges();
-    });
-  }
-
-  void _checkDeviceChanges() {
-    try {
-      final devices = listDevices();
-      final active = devices.where((d) => d.isActive).firstOrNull;
-      if (active?.id != _activeDeviceId) {
-        _activeDeviceId = active?.id;
-        _deviceChangedController.add(active);
-      }
-    } catch (_) {}
+  void startMonitoring(int deviceId) {
+    _activeDeviceId = deviceId;
   }
 
   List<AudioDevice> listDevices() {
@@ -90,19 +66,14 @@ class AudioRoutingService {
     if (target != null) {
       _activeDeviceId = deviceId;
       SoLoud.instance.changeDevice(newDevice: target);
-      await _saveToSettings();
+      _playerSettings?.saveOutputDevice(deviceId);
       debugPrint('[AudioRouting] Switched to: ${target.name} (id: $deviceId)');
     }
   }
 
   int? get activeDeviceId => _activeDeviceId;
 
-  void stopMonitoring() {
-    _pollTimer?.cancel();
-  }
-
   void dispose() {
-    stopMonitoring();
     _deviceChangedController.close();
   }
 }

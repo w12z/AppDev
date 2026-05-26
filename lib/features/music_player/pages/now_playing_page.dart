@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/player_state_provider.dart';
 import '../services/audio_player_service.dart';
 import 'equalizer_page.dart';
 import '../widgets/output_device_sheet.dart';
@@ -19,7 +18,7 @@ class NowPlayingPage extends StatelessWidget {
         title: const Text('正在播放'),
         backgroundColor: Colors.transparent,
       ),
-      body: Consumer<PlayerStateProvider>(
+      body: Consumer<AudioPlayerService>(
         builder: (context, player, _) {
           final track = player.currentTrack;
           if (track == null) {
@@ -186,7 +185,7 @@ class NowPlayingPage extends StatelessWidget {
   }
 
   void _showQueue(BuildContext context) {
-    final player = context.read<PlayerStateProvider>();
+    final player = context.read<AudioPlayerService>();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -210,7 +209,7 @@ class NowPlayingPage extends StatelessWidget {
                 child: ReorderableListView.builder(
                   itemCount: queue.length,
                   onReorderItem: (oldIndex, newIndex) {
-                    player.moveInQueue(oldIndex, newIndex);
+                    player.moveTrack(oldIndex, newIndex);
                   },
                   buildDefaultDragHandles: false,
                   itemBuilder: (context, index) {
@@ -244,7 +243,7 @@ class NowPlayingPage extends StatelessWidget {
                           },
                         ),
                         onTap: () {
-                          player.playQueue(queue, index);
+                          player.playQueue(queue, startIndex: index);
                           Navigator.pop(ctx);
                         },
                       ),
@@ -260,7 +259,7 @@ class NowPlayingPage extends StatelessWidget {
   }
 
   void _showSettings(BuildContext context) {
-    final player = context.read<PlayerStateProvider>();
+    final player = context.read<AudioPlayerService>();
     showModalBottomSheet(
       context: context,
       builder: (ctx) => _InterruptModeSheet(player: player),
@@ -269,7 +268,7 @@ class NowPlayingPage extends StatelessWidget {
 }
 
 class _InterruptModeSheet extends StatefulWidget {
-  final PlayerStateProvider player;
+  final AudioPlayerService player;
   const _InterruptModeSheet({required this.player});
 
   @override

@@ -9,7 +9,6 @@ export 'services/equalizer_service.dart';
 export 'services/audio_routing_service.dart';
 export 'providers/music_library_provider.dart';
 export 'providers/playlist_provider.dart';
-export 'providers/player_state_provider.dart';
 export 'pages/music_library_page.dart';
 export 'pages/now_playing_page.dart';
 export 'pages/playlist_list_page.dart';

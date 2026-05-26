@@ -9,10 +9,15 @@ enum PlayMode { sequential, shuffle, repeatOne, repeatAll }
 
 enum AudioInterruptMode { pause, duck }
 
-class AudioPlayerService {
+class AudioPlayerService extends ChangeNotifier {
+  static final AudioPlayerService instance = AudioPlayerService._();
+  AudioPlayerService._() {
+    AudioSessionMonitor.instance.start();
+    _startUnifiedPolling();
+  }
+
   AudioSource? _currentSource;
   SoundHandle? _currentHandle;
-  Timer? _pollTimer;
 
   final _queue = <MusicTrack>[];
   var _currentIndex = -1;
@@ -25,59 +30,107 @@ class AudioPlayerService {
   double _volume = 1.0;
   bool _isPlaying = false;
 
-  final _playbackStateController = StreamController<PlaybackState>.broadcast();
-  Stream<PlaybackState> get playbackState => _playbackStateController.stream;
-
-  final _currentIndexController = StreamController<int?>.broadcast();
-  Stream<int?> get currentIndex => _currentIndexController.stream;
-
-  final _positionController = StreamController<Duration>.broadcast();
-  Stream<Duration> get position => _positionController.stream;
-
-  final _durationController = StreamController<Duration>.broadcast();
-  Stream<Duration> get duration => _durationController.stream;
-
-  final _volumeController = StreamController<double>.broadcast();
-  Stream<double> get volume => _volumeController.stream;
-
-  final _playModeController = StreamController<PlayMode>.broadcast();
-  Stream<PlayMode> get playMode => _playModeController.stream;
-
-  final _interruptModeController = StreamController<AudioInterruptMode>.broadcast();
-  Stream<AudioInterruptMode> get interruptModeStream => _interruptModeController.stream;
-
-  final _queueController = StreamController<List<MusicTrack>>.broadcast();
-  Stream<List<MusicTrack>> get queue => _queueController.stream;
+  // ── Public state (same API as old PlayerStateProvider) ──
 
   MusicTrack? get currentTrack =>
       _currentIndex >= 0 && _currentIndex < _queue.length ? _queue[_currentIndex] : null;
 
-  List<MusicTrack> get currentQueue => List.unmodifiable(_queue);
-  PlayMode get currentPlayMode => _playMode;
-  AudioInterruptMode get currentInterruptMode => _interruptMode;
-  int get currentTrackIndex => _currentIndex;
-  Duration get currentPosition => _position;
-  Duration get currentDuration => _duration;
+  List<MusicTrack> get queue => List.unmodifiable(_queue);
+  PlayMode get playMode => _playMode;
+  AudioInterruptMode get interruptMode => _interruptMode;
+  int? get currentIndex => _currentIndex >= 0 ? _currentIndex : null;
+  Duration get position => _position;
+  Duration get duration => _duration;
+  double get volume => _volume;
+  bool get isPlaying => _isPlaying;
 
-  StreamSubscription? _otherAudioSub;
+  double get positionFraction =>
+      _duration.inMilliseconds > 0
+          ? (_position.inMilliseconds / _duration.inMilliseconds).clamp(0.0, 1.0)
+          : 0.0;
 
-  AudioPlayerService() {
-    _startPolling();
+  // ── Unified timer + audio session ──
+
+  Timer? _pollTimer;
+  bool _otherAudioPlaying = false;
+  bool _userPaused = false;
+  int _tickCount = 0;
+  Timer? _fadeTimer;
+
+  AudioPlayerService({AudioInterruptMode initialInterruptMode = AudioInterruptMode.pause}) {
+    _interruptMode = initialInterruptMode;
     AudioSessionMonitor.instance.start();
-    _otherAudioSub = AudioSessionMonitor.instance.onOtherAudioChanged.listen((otherPlaying) {
-      if (_currentHandle == null) return;
-      if (otherPlaying) {
-        _onOtherAudioStarted();
-      } else {
-        _onOtherAudioStopped();
+    _startUnifiedPolling();
+  }
+
+  void _startUnifiedPolling() {
+    _pollTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      _tickCount++;
+
+      // Every tick: position tracking + pause sync
+      _pollPosition();
+
+      // Every 2 ticks (500ms): audio session check
+      if (_tickCount % 2 == 0) {
+        _checkAudioSession();
       }
+
+      // Every 8 ticks (2000ms): device change check (delegated to AudioRoutingService)
+      // Device changes are event-driven via switchToDevice(), so no polling needed
     });
   }
 
-  bool _otherAudioPlaying = false;
-  bool _userPaused = false;
+  void _pollPosition() {
+    if (_currentHandle == null) return;
+    try {
+      final actuallyPaused = SoLoud.instance.getPause(_currentHandle!);
 
-  Timer? _fadeTimer;
+      // In duck mode with other audio, unpause (unless user manually paused)
+      if (actuallyPaused && _interruptMode == AudioInterruptMode.duck && _otherAudioPlaying && !_userPaused) {
+        SoLoud.instance.setPause(_currentHandle!, false);
+      }
+
+      // Sync UI pause state (only for pause mode)
+      if (actuallyPaused && _isPlaying && _interruptMode == AudioInterruptMode.pause) {
+        _isPlaying = false;
+        notifyListeners();
+      } else if (!actuallyPaused && !_isPlaying && !_otherAudioPlaying) {
+        _isPlaying = true;
+        notifyListeners();
+      }
+
+      if (!actuallyPaused) {
+        final pos = SoLoud.instance.getPosition(_currentHandle!);
+        if (pos != _position) {
+          _position = pos;
+          notifyListeners();
+        }
+        // Detect end of track
+        if (_duration > Duration.zero && pos >= _duration - const Duration(milliseconds: 200)) {
+          _onTrackComplete();
+        }
+      }
+    } catch (_) {}
+  }
+
+  void _checkAudioSession() {
+    try {
+      AudioSessionMonitor.instance.hasOtherAudio().then((hasOther) {
+        if (hasOther != _otherAudioPlaying) {
+          _otherAudioPlaying = hasOther;
+          if (_currentHandle != null) {
+            if (hasOther) {
+              _onOtherAudioStarted();
+            } else {
+              _onOtherAudioStopped();
+            }
+          }
+        }
+      });
+    } catch (_) {}
+  }
+
+  // ── Interrupt handling ──
 
   void _fadeVolume(double target, {int steps = 20, int intervalMs = 15}) {
     _fadeTimer?.cancel();
@@ -107,7 +160,7 @@ class AudioPlayerService {
         if (_isPlaying) {
           SoLoud.instance.pauseSwitch(_currentHandle!);
           _isPlaying = false;
-          _playbackStateController.add(PlaybackState.paused);
+          notifyListeners();
         }
         break;
       case AudioInterruptMode.duck:
@@ -124,54 +177,7 @@ class AudioPlayerService {
     }
   }
 
-  void _startPolling() {
-    _pollTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
-      if (_currentHandle == null) return;
-      try {
-        final actuallyPaused = SoLoud.instance.getPause(_currentHandle!);
-
-        // In duck mode with other audio, unpause (unless user manually paused)
-        if (actuallyPaused && _interruptMode == AudioInterruptMode.duck && _otherAudioPlaying && !_userPaused) {
-          SoLoud.instance.setPause(_currentHandle!, false);
-        }
-
-        // Sync UI pause state (only for pause mode)
-        if (actuallyPaused && _isPlaying && _interruptMode == AudioInterruptMode.pause) {
-          _isPlaying = false;
-          _playbackStateController.add(PlaybackState.paused);
-        } else if (!actuallyPaused && !_isPlaying && !_otherAudioPlaying) {
-          _isPlaying = true;
-          _playbackStateController.add(PlaybackState.playing);
-        }
-
-        if (!actuallyPaused) {
-          final pos = SoLoud.instance.getPosition(_currentHandle!);
-          if (pos != _position) {
-            _position = pos;
-            _positionController.add(pos);
-          }
-          // Detect end of track
-          if (_duration > Duration.zero && pos >= _duration - const Duration(milliseconds: 200)) {
-            _onTrackComplete();
-          }
-        }
-      } catch (_) {}
-    });
-  }
-
-  void _onTrackComplete() {
-    _isPlaying = false;
-    _playbackStateController.add(PlaybackState.stopped);
-    final next = _nextIndex;
-    if (next == -1) {
-      _currentIndex = -1;
-      _currentIndexController.add(null);
-    } else {
-      _loadAndPlayTrack(next);
-    }
-  }
-
-  // ── Player control ──
+  // ── Player controls ──
 
   Future<void> play() async {
     _userPaused = false;
@@ -179,9 +185,17 @@ class AudioPlayerService {
     if (_currentHandle != null) {
       SoLoud.instance.pauseSwitch(_currentHandle!);
       _isPlaying = true;
-      _playbackStateController.add(PlaybackState.playing);
+      notifyListeners();
     } else if (_queue.isNotEmpty) {
       await _loadAndPlayTrack(_effectiveIndex);
+    }
+  }
+
+  void togglePlayPause() {
+    if (_isPlaying) {
+      pause();
+    } else {
+      play();
     }
   }
 
@@ -190,22 +204,21 @@ class AudioPlayerService {
     _userPaused = true;
     SoLoud.instance.pauseSwitch(_currentHandle!);
     _isPlaying = false;
-    _playbackStateController.add(PlaybackState.paused);
+    notifyListeners();
   }
 
   Future<void> stop() async {
     _cleanupCurrent();
     _currentIndex = -1;
     _shufflePosition = -1;
-    _currentIndexController.add(null);
-    _playbackStateController.add(PlaybackState.stopped);
+    notifyListeners();
   }
 
   Future<void> seek(Duration pos) async {
     if (_currentHandle == null) return;
     SoLoud.instance.seek(_currentHandle!, pos);
     _position = pos;
-    _positionController.add(pos);
+    notifyListeners();
   }
 
   Future<void> setVolume(double v) async {
@@ -213,33 +226,43 @@ class AudioPlayerService {
     if (_currentHandle != null) {
       SoLoud.instance.setVolume(_currentHandle!, _volume);
     }
-    _volumeController.add(_volume);
+    notifyListeners();
   }
 
-  Future<void> skipToNext() async {
+  void next() {
     if (_queue.isEmpty) return;
     final nextIdx = _nextIndex;
     if (nextIdx == -1) return;
-    await _loadAndPlayTrack(nextIdx);
+    _loadAndPlayTrack(nextIdx);
   }
 
-  Future<void> skipToPrevious() async {
+  void previous() {
     if (_queue.isEmpty) return;
     final prevIdx = _previousIndex;
     if (prevIdx == -1) return;
-    await _loadAndPlayTrack(prevIdx);
+    _loadAndPlayTrack(prevIdx);
   }
 
   // ── Queue management ──
 
-  Future<void> loadQueue(List<MusicTrack> tracks, {int startIndex = 0}) async {
+  Future<void> playQueue(List<MusicTrack> tracks, {int startIndex = 0}) async {
     _queue.clear();
     _queue.addAll(tracks);
     _rebuildShuffleOrder();
-    _queueController.add(currentQueue);
+    notifyListeners();
 
     if (tracks.isNotEmpty) {
       await _loadAndPlayTrack(startIndex.clamp(0, tracks.length - 1));
+    }
+  }
+
+  void playPlaylist(List<MusicTrack> tracks) {
+    _queue.clear();
+    _queue.addAll(tracks);
+    _rebuildShuffleOrder();
+    notifyListeners();
+    if (tracks.isNotEmpty) {
+      _loadAndPlayTrack(0);
     }
   }
 
@@ -260,7 +283,7 @@ class AudioPlayerService {
       _currentIndex++;
     }
     _rebuildShuffleOrder();
-    _queueController.add(currentQueue);
+    notifyListeners();
   }
 
   void removeFromQueue(int index) {
@@ -271,7 +294,6 @@ class AudioPlayerService {
     } else if (index == _currentIndex) {
       if (_queue.isEmpty) {
         _currentIndex = -1;
-        _currentIndexController.add(null);
         _cleanupCurrent();
       } else if (_currentIndex >= _queue.length) {
         _loadAndPlayTrack(0);
@@ -279,41 +301,45 @@ class AudioPlayerService {
         _loadAndPlayTrack(_currentIndex);
       }
       _rebuildShuffleOrder();
-      _queueController.add(currentQueue);
+      notifyListeners();
       return;
     }
     _rebuildShuffleOrder();
-    _queueController.add(currentQueue);
+    notifyListeners();
   }
 
   void addToQueue(MusicTrack track) {
     _queue.add(track);
     _rebuildShuffleOrder();
-    _queueController.add(currentQueue);
+    notifyListeners();
   }
 
   void insertNext(MusicTrack track) {
     final insertAt = (_currentIndex + 1).clamp(0, _queue.length);
     _queue.insert(insertAt, track);
     _rebuildShuffleOrder();
-    _queueController.add(currentQueue);
+    notifyListeners();
   }
 
   // ── Play mode ──
 
   void setPlayMode(PlayMode mode) {
     _playMode = mode;
-    _playModeController.add(mode);
     if (mode == PlayMode.shuffle) {
       _rebuildShuffleOrder();
       _shufflePosition = _shuffleOrder.indexOf(_currentIndex);
     }
+    notifyListeners();
   }
 
-  Future<void> setInterruptMode(AudioInterruptMode mode) async {
+  void setInterruptMode(AudioInterruptMode mode) {
     _interruptMode = mode;
-    _interruptModeController.add(mode);
+    notifyListeners();
+    onInterruptModeChanged?.call(mode);
   }
+
+  /// Callback invoked when the user changes interrupt mode (for persistence).
+  void Function(AudioInterruptMode)? onInterruptModeChanged;
 
   // ── Internal ──
 
@@ -379,20 +405,17 @@ class AudioPlayerService {
   Future<void> _loadAndPlayTrack(int index) async {
     _cleanupCurrent();
     _currentIndex = index;
-    _currentIndexController.add(index);
-    _playbackStateController.add(PlaybackState.loading);
+    notifyListeners();
 
     final path = _queue[index].path;
     try {
       _currentSource = await SoLoud.instance.loadFile(path);
       _duration = SoLoud.instance.getLength(_currentSource!);
-      _durationController.add(_duration);
       _currentHandle = SoLoud.instance.play(_currentSource!, volume: _volume);
       _isPlaying = true;
-      _playbackStateController.add(PlaybackState.playing);
+      notifyListeners();
     } catch (e) {
       debugPrint('[AudioPlayer] Failed to load: $path, error: $e');
-      _playbackStateController.add(PlaybackState.stopped);
       final next = _nextIndex;
       if (next != -1 && next != index) {
         _loadAndPlayTrack(next);
@@ -400,20 +423,23 @@ class AudioPlayerService {
     }
   }
 
-  Future<void> dispose() async {
+  void _onTrackComplete() {
+    _isPlaying = false;
+    notifyListeners();
+    final next = _nextIndex;
+    if (next == -1) {
+      _currentIndex = -1;
+      notifyListeners();
+    } else {
+      _loadAndPlayTrack(next);
+    }
+  }
+
+  @override
+  void dispose() {
     _pollTimer?.cancel();
-    _otherAudioSub?.cancel();
     _fadeTimer?.cancel();
     _cleanupCurrent();
-    await _playbackStateController.close();
-    await _currentIndexController.close();
-    await _positionController.close();
-    await _durationController.close();
-    await _volumeController.close();
-    await _playModeController.close();
-    await _interruptModeController.close();
-    await _queueController.close();
+    super.dispose();
   }
 }
-
-enum PlaybackState { playing, paused, loading, stopped }

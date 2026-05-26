@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 import '../models/playlist.dart';
 import '../models/eq_preset.dart';
 import 'settings_repository.dart';
+import 'music_player_settings.dart';
 
 class PlaylistRepository {
   static final PlaylistRepository instance = PlaylistRepository._();
@@ -11,6 +12,7 @@ class PlaylistRepository {
 
   Database? _db;
   final SettingsRepository settings = SettingsRepository();
+  late final MusicPlayerSettings playerSettings = MusicPlayerSettings(settings);
 
   Future<Database> get db async {
     if (_db != null) return _db!;
@@ -85,19 +87,6 @@ class PlaylistRepository {
         value TEXT NOT NULL
       )
     ''');
-
-    await _insertDefaultEqPresets(db);
-  }
-
-  Future<void> _insertDefaultEqPresets(Database db) async {
-    for (final preset in EqPreset.builtInPresets) {
-      await db.insert('eq_presets', {
-        'name': preset.name,
-        'gains_json': jsonEncode(preset.gains),
-        'is_builtin': 1,
-        'created_at': preset.createdAt.toIso8601String(),
-      });
-    }
   }
 
   // ── Playlist CRUD ──
@@ -202,25 +191,30 @@ class PlaylistRepository {
 
   Future<List<Playlist>> getAll() async {
     final database = await db;
-    final rows = await database.query('playlists', orderBy: 'updated_at DESC');
-    final playlists = <Playlist>[];
+    // Single JOIN query instead of N+1 queries
+    final rows = await database.rawQuery('''
+      SELECT p.id, p.name, p.created_at, p.updated_at,
+             pt.track_path
+      FROM playlists p
+      LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
+      ORDER BY p.updated_at DESC, pt.sort_order ASC
+    ''');
+    final map = <int, Playlist>{};
     for (final row in rows) {
-      final tracks = await database.query(
-        'playlist_tracks',
-        where: 'playlist_id = ?',
-        whereArgs: [row['id']],
-        orderBy: 'sort_order ASC',
-      );
-      final trackPaths = tracks.map((t) => t['track_path'] as String).toList();
-      playlists.add(Playlist(
-        id: row['id'] as int,
+      final id = row['id'] as int;
+      final playlist = map.putIfAbsent(id, () => Playlist(
+        id: id,
         name: row['name'] as String,
-        trackPaths: trackPaths,
+        trackPaths: <String>[],
         createdAt: DateTime.parse(row['created_at'] as String),
         updatedAt: DateTime.parse(row['updated_at'] as String),
       ));
+      final trackPath = row['track_path'] as String?;
+      if (trackPath != null) {
+        playlist.trackPaths.add(trackPath);
+      }
     }
-    return playlists;
+    return map.values.toList();
   }
 
   Future<Playlist?> getById(int id) async {
@@ -248,8 +242,12 @@ class PlaylistRepository {
 
   Future<List<EqPreset>> getAllEqPresets() async {
     final database = await db;
-    final rows = await database.query('eq_presets', orderBy: 'is_builtin DESC, id ASC');
-    return rows.map((row) => EqPreset.fromJson(row)).toList();
+    // Only load custom (user-created) presets from DB; built-ins are code constants
+    final rows = await database.query('eq_presets',
+        where: 'is_builtin = 0', orderBy: 'id ASC');
+    final custom = rows.map((row) => EqPreset.fromJson(row)).toList();
+    // Built-in presets come first, then custom
+    return [...EqPreset.builtInPresets, ...custom];
   }
 
   Future<int> saveEqPreset(String name, List<double> gains) async {

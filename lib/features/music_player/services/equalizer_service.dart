@@ -1,15 +1,14 @@
-import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
 import '../models/eq_preset.dart';
-import 'settings_repository.dart';
+import 'music_player_settings.dart';
 
 class EqualizerService {
   static final EqualizerService instance = EqualizerService._();
   EqualizerService._();
 
-  SettingsRepository? _settings;
+  MusicPlayerSettings? _playerSettings;
 
   bool _enabled = false;
   final List<double> _gains = List.filled(EqPreset.bandCount, 0.0);
@@ -20,8 +19,8 @@ class EqualizerService {
   List<double> get gains => List.unmodifiable(_gains);
   String? get activePresetName => _activePresetName;
 
-  void attachSettings(SettingsRepository settings) {
-    _settings = settings;
+  void attachSettings(MusicPlayerSettings settings) {
+    _playerSettings = settings;
   }
 
   static double _dbToGain(double db) {
@@ -29,35 +28,18 @@ class EqualizerService {
     return pow(10, db / 20).clamp(0.0, 4.0).toDouble();
   }
 
-  // ── Persistence ──
+  // ── Load from centralized settings ──
 
   Future<void> loadFromSettings() async {
-    if (_settings == null) return;
-    final enabled = await _settings!.getBool('eq_enabled');
-    final presetName = await _settings!.get('eq_active_preset');
-    final gainsJson = await _settings!.get('eq_gains');
-
-    if (gainsJson != null) {
-      try {
-        final list = (jsonDecode(gainsJson) as List).map((e) => (e as num).toDouble()).toList();
-        for (int i = 0; i < list.length && i < EqPreset.bandCount; i++) {
-          _gains[i] = list[i].clamp(EqPreset.minGain, EqPreset.maxGain);
-        }
-      } catch (_) {}
+    if (_playerSettings == null) return;
+    _enabled = _playerSettings!.eqEnabled;
+    _activePresetName = _playerSettings!.eqActivePreset;
+    for (int i = 0; i < _playerSettings!.eqGains.length && i < EqPreset.bandCount; i++) {
+      _gains[i] = _playerSettings!.eqGains[i].clamp(EqPreset.minGain, EqPreset.maxGain);
     }
-
-    _activePresetName = presetName ?? 'Flat';
-
-    if (enabled) {
+    if (_enabled) {
       await setEnabled(true);
     }
-  }
-
-  Future<void> _saveToSettings() async {
-    if (_settings == null) return;
-    await _settings!.setBool('eq_enabled', _enabled);
-    await _settings!.set('eq_active_preset', _activePresetName ?? 'Flat');
-    await _settings!.set('eq_gains', jsonEncode(_gains));
   }
 
   // ── Filter control ──
@@ -69,7 +51,7 @@ class EqualizerService {
     } else {
       await _deactivateFilter();
     }
-    await _saveToSettings();
+    _playerSettings?.saveEqState(enabled);
   }
 
   Future<void> _activateFilter() async {
@@ -100,7 +82,8 @@ class EqualizerService {
     _gains[band] = gainDb.clamp(EqPreset.minGain, EqPreset.maxGain);
     _activePresetName = 'Custom';
     await _applyBandGain(band);
-    await _saveToSettings();
+    _playerSettings?.saveEqGains(_gains);
+    _playerSettings?.saveEqPresetName('Custom');
   }
 
   Future<void> applyGains(List<double> gains) async {
@@ -108,7 +91,7 @@ class EqualizerService {
       _gains[i] = gains[i].clamp(EqPreset.minGain, EqPreset.maxGain);
     }
     await _applyAllGains();
-    await _saveToSettings();
+    _playerSettings?.saveEqGains(_gains);
   }
 
   Future<void> _applyBandGain(int band) async {
@@ -135,6 +118,7 @@ class EqualizerService {
   Future<void> applyPreset(EqPreset preset) async {
     _activePresetName = preset.name;
     await applyGains(preset.gains);
+    _playerSettings?.saveEqPresetName(preset.name);
   }
 
   Future<void> applyPresetByName(String name, List<EqPreset> allPresets) async {
@@ -150,7 +134,8 @@ class EqualizerService {
     }
     _activePresetName = 'Flat';
     await _applyAllGains();
-    await _saveToSettings();
+    _playerSettings?.saveEqGains(_gains);
+    _playerSettings?.saveEqPresetName('Flat');
   }
 
   void dispose() {

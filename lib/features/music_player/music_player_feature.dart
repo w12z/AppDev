@@ -3,7 +3,6 @@ import 'package:flutter_soloud/flutter_soloud.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../../core/feature_interface.dart';
 import 'pages/music_library_page.dart';
-import 'providers/player_state_provider.dart';
 import 'services/audio_player_service.dart';
 import 'services/audio_routing_service.dart';
 import 'services/equalizer_service.dart';
@@ -25,7 +24,7 @@ class MusicPlayerFeature extends AppFeature {
   String get iconAsset => 'assets/icons/music.svg';
 
   @override
-  bool get enabledByDefault => true;
+  bool get enabledByDefault => false;
 
   @override
   Widget buildPage(BuildContext context) {
@@ -48,31 +47,26 @@ class MusicPlayerFeature extends AppFeature {
     databaseFactory = databaseFactoryFfi;
     await SoLoud.instance.init();
 
-    // Initialize DB to get settings
+    // Initialize DB and centralized settings
     final repo = PlaylistRepository.instance;
     await repo.db;
-    final settings = repo.settings;
+    final settings = repo.playerSettings;
+    await settings.load();
 
     // Wire settings to singletons
     EqualizerService.instance.attachSettings(settings);
     AudioRoutingService.instance.attachSettings(settings);
 
-    // Load EQ settings (enabled, active preset, gains)
+    // Load EQ state from centralized settings
     await EqualizerService.instance.loadFromSettings();
 
-    // Load interrupt mode
-    final interruptModeStr = await settings.get('interrupt_mode');
-    if (interruptModeStr != null) {
-      final mode = AudioInterruptMode.values.firstWhere(
-        (m) => m.name == interruptModeStr,
-        orElse: () => AudioInterruptMode.pause,
-      );
-      PlayerStateProvider.setDefaultInterruptMode(mode);
-    }
+    // Apply interrupt mode from settings to the player singleton
+    final player = AudioPlayerService.instance;
+    player.setInterruptMode(settings.interruptMode);
 
     // Save interrupt mode when changed by user
-    PlayerStateProvider.onInterruptModeChanged = (mode) {
-      settings.set('interrupt_mode', mode.name);
+    player.onInterruptModeChanged = (mode) {
+      settings.saveInterruptMode(mode);
     };
 
     // Load output device preference
