@@ -1,4 +1,6 @@
 import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -37,7 +39,8 @@ class FileItem {
   }
 
   static String nameFromPath(String path) {
-    final segments = path.split(Platform.pathSeparator).where((s) => s.isNotEmpty).toList();
+    final sep = kIsWeb ? '/' : Platform.pathSeparator;
+    final segments = path.split(sep).where((s) => s.isNotEmpty).toList();
     return segments.isEmpty ? path : segments.last;
   }
 
@@ -191,9 +194,10 @@ class FileItem {
   }
 
   bool get canGoUp {
+    if (kIsWeb) return false;
     final parent = Directory(path).parent.path;
     return parent != path;
   }
 
-  String get parentPath => Directory(path).parent.path;
+  String get parentPath => kIsWeb ? '/' : Directory(path).parent.path;
 }
