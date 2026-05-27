@@ -43,34 +43,38 @@ class MusicPlayerFeature extends AppFeature {
 
   @override
   Future<void> init() async {
+    // SQLite FFI init (sync DLL load, brief)
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
-    await SoLoud.instance.init();
 
-    // Initialize DB and centralized settings
+    // Run independent heavy init in parallel
     final repo = PlaylistRepository.instance;
-    await repo.db;
+    await Future.wait([
+      SoLoud.instance.init(),
+      repo.db,
+    ]);
+
+    // Load settings (single batch query)
     final settings = repo.playerSettings;
     await settings.load();
 
-    // Wire settings to singletons
+    // Wire settings to singletons (sync, instant)
     EqualizerService.instance.attachSettings(settings);
     AudioRoutingService.instance.attachSettings(settings);
 
-    // Load EQ state from centralized settings
-    await EqualizerService.instance.loadFromSettings();
-
-    // Apply interrupt mode from settings to the player singleton
+    // Apply player state from settings (sync, instant)
     final player = AudioPlayerService.instance;
     player.setInterruptMode(settings.interruptMode);
-
-    // Save interrupt mode when changed by user
     player.onInterruptModeChanged = (mode) {
       settings.saveInterruptMode(mode);
     };
 
-    // Load output device preference
-    await AudioRoutingService.instance.loadFromSettings();
+    // Defer EQ and routing restore to next frame — these are
+    // non-critical and involve secondary native calls.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await EqualizerService.instance.loadFromSettings();
+      await AudioRoutingService.instance.loadFromSettings();
+    });
   }
 
   @override

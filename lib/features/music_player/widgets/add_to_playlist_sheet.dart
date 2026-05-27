@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_library_provider.dart';
@@ -116,8 +117,13 @@ class _AddToPlaylistSheetState extends State<AddToPlaylistSheet> {
                           const Text('未扫描到音乐文件'),
                           const SizedBox(height: 8),
                           OutlinedButton(
-                            onPressed: () {
-                              context.read<MusicLibraryProvider>().scanDefaultLocations();
+                            onPressed: () async {
+                              final path = await FilePicker.platform.getDirectoryPath(
+                                dialogTitle: '选择音乐文件夹',
+                              );
+                              if (path != null && context.mounted) {
+                                context.read<MusicLibraryProvider>().scanDirectory(path);
+                              }
                             },
                             child: const Text('扫描音乐'),
                           ),

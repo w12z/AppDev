@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/music_track.dart';
@@ -15,7 +16,6 @@ class MusicLibraryPage extends StatefulWidget {
 }
 
 class _MusicLibraryPageState extends State<MusicLibraryPage> {
-  bool _isScanning = false;
   bool _showAllAudio = false;
 
   @override
@@ -46,46 +46,21 @@ class _MusicLibraryPageState extends State<MusicLibraryPage> {
             icon: const Icon(Icons.search),
             onPressed: () => _showSearch(context),
           ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.manage_search),
-            tooltip: '扫描选项',
-            onSelected: (value) {
-              final library = context.read<MusicLibraryProvider>();
-              switch (value) {
-                case 'incremental':
-                  _startScan(() => library.startIncrementalScan());
-                  break;
-                case 'full':
-                  _startScan(() => library.startFullDiskScan());
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'incremental',
-                child: ListTile(
-                  leading: Icon(Icons.speed),
-                  title: Text('增量扫描'),
-                  subtitle: Text('仅扫描新文件（快速）'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'full',
-                child: ListTile(
-                  leading: Icon(Icons.storage),
-                  title: Text('全盘扫描'),
-                  subtitle: Text('扫描所有硬盘分区'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-            ],
+          IconButton(
+            icon: const Icon(Icons.folder_open),
+            tooltip: '扫描文件夹',
+            onPressed: () => _pickAndScanFolder(),
           ),
         ],
       ),
       body: Column(
         children: [
-          if (_isScanning) _buildScanProgress(),
+          Consumer<MusicLibraryProvider>(
+            builder: (context, library, _) {
+              if (!library.isLoading) return const SizedBox.shrink();
+              return const LinearProgressIndicator();
+            },
+          ),
           Expanded(
             child: _showAllAudio ? _buildAllAudioView() : _buildHomeView(),
           ),
@@ -246,8 +221,8 @@ class _MusicLibraryPageState extends State<MusicLibraryPage> {
                 Text(library.error!, textAlign: TextAlign.center),
                 const SizedBox(height: 16),
                 FilledButton(
-                  onPressed: () => library.scanDefaultLocations(),
-                  child: const Text('重试'),
+                  onPressed: () => _pickAndScanFolder(),
+                  child: const Text('选择文件夹'),
                 ),
               ],
             ),
@@ -264,7 +239,7 @@ class _MusicLibraryPageState extends State<MusicLibraryPage> {
                 Text('未发现音乐文件',
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
-                Text('请点击右上角扫描按钮',
+                Text('请点击右上角文件夹图标选择音乐文件夹',
                     style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
@@ -294,47 +269,6 @@ class _MusicLibraryPageState extends State<MusicLibraryPage> {
     );
   }
 
-  Widget _buildScanProgress() {
-    return Consumer<MusicLibraryProvider>(
-      builder: (context, library, _) {
-        final p = library.scanProgress;
-        return Container(
-          color: Theme.of(context).colorScheme.primaryContainer.withAlpha(80),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              const SizedBox(
-                width: 16, height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('扫描中: 已找到 ${p.filesFound} 个文件',
-                        style: Theme.of(context).textTheme.bodySmall),
-                    if (p.currentDirectory.isNotEmpty)
-                      Text(p.currentDirectory, maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close, size: 18),
-                onPressed: () {
-                  library.cancelScan();
-                  setState(() => _isScanning = false);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
   // ── Dialogs ──
 
@@ -547,18 +481,20 @@ class _MusicLibraryPageState extends State<MusicLibraryPage> {
     );
   }
 
-  void _startScan(Future<void> Function() scanFn) async {
-    setState(() => _isScanning = true);
-    final startCount = context.read<MusicLibraryProvider>().allTracks.length;
-    await scanFn();
+  Future<void> _pickAndScanFolder() async {
+    final path = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: '选择音乐文件夹',
+    );
+    if (path == null || !mounted) return;
+
+    final library = context.read<MusicLibraryProvider>();
+    await library.scanDirectory(path);
+
     if (!mounted) return;
-    final endCount = context.read<MusicLibraryProvider>().allTracks.length;
-    final newFiles = endCount - startCount;
-    setState(() => _isScanning = false);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(newFiles > 0
-          ? '扫描完成，新增 $newFiles 首音乐'
-          : '扫描完成，未发现新文件'),
+      content: Text(library.error != null
+          ? '扫描失败: ${library.error}'
+          : '扫描完成，发现 ${library.allTracks.length} 首音乐'),
       duration: const Duration(seconds: 3),
     ));
   }

@@ -37,7 +37,7 @@ file_hub/
 │           │   ├── audio_routing_service.dart# 输出设备管理
 │           │   ├── equalizer_service.dart    # 10段参数均衡器
 │           │   ├── music_player_settings.dart# 集中化用户设置
-│           │   ├── music_scanner.dart        # 全盘扫描 (Isolate + 增量)
+│           │   ├── music_scanner.dart        # 文件夹扫描
 │           │   └── playlist_repository.dart  # SQLite CRUD + scan_cache
 │           ├── providers/
 │           │   ├── music_library_provider.dart # 曲目库 + 扫描编排 + 重命名联动

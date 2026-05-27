@@ -22,44 +22,23 @@ class MusicPlayerSettings extends ChangeNotifier {
 
   // ── KV storage ──
 
-  Future<String?> _get(String key) async {
-    final rows = await _ensureDb.query('settings',
-        columns: ['value'], where: 'key = ?', whereArgs: [key]);
-    if (rows.isEmpty) return null;
-    return rows.first['value'] as String?;
-  }
-
   Future<void> _set(String key, String value) async {
     await _ensureDb.insert('settings', {'key': key, 'value': value},
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<bool> _getBool(String key, {bool defaultValue = false}) async {
-    final v = await _get(key);
-    if (v == null) return defaultValue;
-    return v == 'true';
-  }
-
-  Future<void> _setBool(String key, bool value) async =>
-      _set(key, value ? 'true' : 'false');
-
-  Future<int?> _getInt(String key) async {
-    final v = await _get(key);
-    return v != null ? int.tryParse(v) : null;
-  }
-
-  Future<void> _setInt(String key, int value) async =>
-      _set(key, value.toString());
-
   // ── Load / Save ──
 
   Future<void> load() async {
-    eqEnabled = await _getBool('eq_enabled');
-    eqActivePreset = await _get('eq_active_preset') ?? 'Flat';
-    interruptMode = _parseInterruptMode(await _get('interrupt_mode'));
-    outputDeviceId = await _getInt('output_device_id');
+    final rows = await _ensureDb.query('settings');
+    final map = {for (final r in rows) r['key'] as String: r['value'] as String};
 
-    final gainsJson = await _get('eq_gains');
+    eqEnabled = map['eq_enabled'] == 'true';
+    eqActivePreset = map['eq_active_preset'] ?? 'Flat';
+    interruptMode = _parseInterruptMode(map['interrupt_mode']);
+    outputDeviceId = map['output_device_id'] != null ? int.tryParse(map['output_device_id']!) : null;
+
+    final gainsJson = map['eq_gains'];
     if (gainsJson != null) {
       try {
         final list = (jsonDecode(gainsJson) as List)
@@ -77,7 +56,7 @@ class MusicPlayerSettings extends ChangeNotifier {
 
   Future<void> saveEqState(bool enabled) async {
     eqEnabled = enabled;
-    await _setBool('eq_enabled', enabled);
+    await _set('eq_enabled', enabled ? 'true' : 'false');
     notifyListeners();
   }
 
@@ -95,7 +74,7 @@ class MusicPlayerSettings extends ChangeNotifier {
 
   Future<void> saveOutputDevice(int deviceId) async {
     outputDeviceId = deviceId;
-    await _setInt('output_device_id', deviceId);
+    await _set('output_device_id', deviceId.toString());
   }
 
   Future<void> saveInterruptMode(AudioInterruptMode mode) async {

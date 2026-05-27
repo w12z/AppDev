@@ -89,6 +89,38 @@ flutter analyze
 
 ## 更新日志
 
+### 2026-05-27 — 扫描模式简化 + 启用性能优化
+
+**扫描模式变更**
+
+| # | 改动 | 说明 |
+|---|------|------|
+| ① | 全盘扫描 → 文件夹扫描 | 删除 `enumerateDrives()`、Isolate、系统目录黑名单，改为 FilePicker 选择文件夹直接扫描 |
+| ② | 扫描按钮简化 | PopupMenuButton（增量/全盘）→ IconButton，点击即弹出文件夹选择器 |
+
+**性能优化（启用音乐模块时）**
+
+| # | 优化项 | 改动前 | 改动后 |
+|---|--------|--------|--------|
+| ① | 并行化初始化 | SoLoud + DB 串行 await | `Future.wait` 并行 |
+| ② | 设置批量查询 | 5 次独立 DB 查询 | 单次 `SELECT * FROM settings` |
+| ③ | 延迟非关键初始化 | EQ / 音频路由阻塞 init() | `addPostFrameCallback` 延迟到首帧后 |
+
+**文件变更**
+
+| 操作 | 文件 |
+|------|------|
+| ✏️ 重写 | `music_scanner.dart`（290→30 行，删除 Isolate/全盘扫描/黑名单） |
+| ✏️ 修改 | `music_library_provider.dart`（删除 4 个旧扫描方法） |
+| ✏️ 修改 | `music_library_page.dart`（PopupMenuButton → FilePicker IconButton） |
+| ✏️ 修改 | `add_to_playlist_sheet.dart`（适配新扫描） |
+| ✏️ 优化 | `music_player_feature.dart`（并行 init + 延迟 EQ/路由） |
+| ✏️ 优化 | `music_player_settings.dart`（批量查询 + 删除冗余 helper） |
+
+**总计：净删除 ~200 行，启用模块时减少 ~50% 等待时间。**
+
+---
+
 ### 2026-05-27 — 合并 main + 修复 CMake 构建
 
 **合并 main 分支新增**

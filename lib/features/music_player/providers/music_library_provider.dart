@@ -12,13 +12,11 @@ class MusicLibraryProvider extends ChangeNotifier {
   final List<MusicTrack> _recentlyPlayed = [];
   bool _isLoading = false;
   String? _error;
-  ScanProgress _scanProgress = const ScanProgress(isComplete: true);
 
   List<MusicTrack> get allTracks => _allTracks;
   List<MusicTrack> get recentlyPlayed => List.unmodifiable(_recentlyPlayed);
   bool get isLoading => _isLoading;
   String? get error => _error;
-  ScanProgress get scanProgress => _scanProgress;
 
   // ── Cache ──
 
@@ -32,73 +30,6 @@ class MusicLibraryProvider extends ChangeNotifier {
 
   // ── Scanning ──
 
-  Future<void> startFullDiskScan() async {
-    _isLoading = true;
-    _error = null;
-    _scanProgress = const ScanProgress();
-    notifyListeners();
-
-    try {
-      await _scanner.scanAllDrives(onProgress: (p) {
-        _scanProgress = p;
-        notifyListeners();
-      });
-      // Reload from cache to get complete sorted list
-      _allTracks = await PlaylistRepository.instance.getCachedTracks();
-    } catch (e) {
-      _error = e.toString();
-    }
-
-    _isLoading = false;
-    _scanProgress = const ScanProgress(isComplete: true);
-    notifyListeners();
-  }
-
-  Future<void> startIncrementalScan() async {
-    _isLoading = true;
-    _error = null;
-    _scanProgress = const ScanProgress();
-    notifyListeners();
-
-    try {
-      final newCount = await _scanner.scanIncremental(onProgress: (p) {
-        _scanProgress = p;
-        notifyListeners();
-      });
-      if (newCount > 0) {
-        _allTracks = await PlaylistRepository.instance.getCachedTracks();
-      }
-    } catch (e) {
-      _error = e.toString();
-    }
-
-    _isLoading = false;
-    _scanProgress = const ScanProgress(isComplete: true);
-    notifyListeners();
-  }
-
-  void cancelScan() {
-    _scanner.cancelScan();
-    _isLoading = false;
-    _scanProgress = const ScanProgress(isComplete: true);
-    notifyListeners();
-  }
-
-  Future<void> scanDefaultLocations() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      _allTracks = await _scanner.scanDefaultLocations();
-    } catch (e) {
-      _error = e.toString();
-    }
-
-    _isLoading = false;
-    notifyListeners();
-  }
-
   Future<void> scanDirectory(String path) async {
     _isLoading = true;
     _error = null;
@@ -106,6 +37,10 @@ class MusicLibraryProvider extends ChangeNotifier {
 
     try {
       _allTracks = await _scanner.scanDirectory(path);
+      // Save to cache
+      if (_allTracks.isNotEmpty) {
+        await PlaylistRepository.instance.replaceCachedTracks(_allTracks);
+      }
     } catch (e) {
       _error = e.toString();
     }

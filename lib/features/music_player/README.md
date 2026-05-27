@@ -1,6 +1,6 @@
 # 音乐播放器模块
 
-基于 flutter_soloud 音频引擎 (MiniAudio 后端)，支持全盘音乐扫描、SQLite 缓存、多歌单队列、统一设置页（播放模式/10段均衡器/输出设备/音频打断策略）。
+基于 flutter_soloud 音频引擎 (MiniAudio 后端)，支持文件夹音乐扫描、SQLite 缓存、多歌单队列、统一设置页（播放模式/10段均衡器/输出设备/音频打断策略）。
 
 ## 目录结构
 
@@ -11,7 +11,7 @@ music_player/
 │   └── eq_preset.dart            # 均衡器预设 (9 个内置 + 自定义)
 ├── services/
 │   ├── audio_player_service.dart # 播放引擎 (ChangeNotifier 单例, 含音频焦点)
-│   ├── music_scanner.dart        # 全盘扫描 (Isolate + 增量)
+│   ├── music_scanner.dart        # 文件夹扫描
 │   ├── playlist_repository.dart  # SQLite CRUD + scan_cache
 │   ├── music_player_settings.dart# 集中设置 (EQ/打断/输出设备)
 │   ├── equalizer_service.dart    # 10 段参数均衡器
@@ -39,8 +39,8 @@ music_player/
 
 | 功能 | 说明 |
 |---|---|
-| 全盘扫描 | Windows 盘符枚举 (A:\~Z:\) + 系统目录黑名单 + 后台 Isolate |
-| 缓存增量 | SQLite scan_cache 表，重启即加载，增量扫描跳过已缓存文件 |
+| 文件夹扫描 | FilePicker 选择文件夹，直接扫描，结果缓存至 SQLite |
+| 缓存加载 | SQLite scan_cache 表，重启即加载已缓存曲目 |
 | 卡片队列 | 多歌单叠放卡片，拖拽切换，切歌保存/恢复位置 |
 | 歌单管理 | 创建/重命名/删除，PageView 滑动，拖拽排序，两方向添加 |
 | 均衡器 | 10 段 ±12dB Flat/Rock/Pop/Jazz 等 9 个预设 + 自定义存取（设置页内） |
@@ -53,7 +53,7 @@ music_player/
 ## 数据流
 
 ```
-扫描: DriveEnumerator → Isolate 遍历 → MusicScanner
+扫描: FilePicker → MusicScanner.scanDirectory()
       → PlaylistRepository.scan_cache → MusicLibraryProvider → UI
 
 播放: 点击曲目 → AudioPlayerService.playQueue()
