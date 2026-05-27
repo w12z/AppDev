@@ -1,10 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+
 import 'file_item.dart';
 import 'feature_registry.dart';
+import '../features/pdf_viewer/pdf_viewer_feature.dart';
 
 // ============================================================
 // Services
@@ -12,6 +16,7 @@ import 'feature_registry.dart';
 
 class FileService {
   Future<List<FileItem>> listDirectory(String path) async {
+    if (kIsWeb) return [];
     try {
       final dir = Directory(path);
       if (!await dir.exists()) return [];
@@ -62,6 +67,7 @@ class FileService {
   }
 
   Future<bool> openFile(String path) async {
+    if (kIsWeb) return false;
     try {
       if (Platform.isWindows) {
         await Process.run('cmd', ['/c', 'start', '', path], runInShell: true);
@@ -77,6 +83,7 @@ class FileService {
   }
 
   List<DirectoryEntry> getCommonDirectories() {
+    if (kIsWeb) return [];
     final home = _homePath;
     final sep = Platform.pathSeparator;
     final entries = <DirectoryEntry>[];
@@ -102,9 +109,11 @@ class FileService {
       ];
 
   String get _homePath =>
-      Platform.environment['USERPROFILE'] ??
-      Platform.environment['HOME'] ??
-      '/';
+      kIsWeb
+          ? '/'
+          : Platform.environment['USERPROFILE'] ??
+              Platform.environment['HOME'] ??
+              '/';
 
   String get homePath => _homePath;
 }
@@ -129,6 +138,7 @@ class QuickAccessService {
   }
 
   Future<List<String>> getPaths() async {
+    if (kIsWeb) return [];
     try {
       final file = await _configFile;
       if (!await file.exists()) return [];
@@ -141,6 +151,7 @@ class QuickAccessService {
   }
 
   Future<void> add(String path) async {
+    if (kIsWeb) return;
     final paths = await getPaths();
     if (!paths.contains(path)) {
       paths.insert(0, path);
@@ -149,17 +160,20 @@ class QuickAccessService {
   }
 
   Future<void> remove(String path) async {
+    if (kIsWeb) return;
     final paths = await getPaths();
     paths.remove(path);
     await _save(paths);
   }
 
   Future<bool> contains(String path) async {
+    if (kIsWeb) return false;
     final paths = await getPaths();
     return paths.contains(path);
   }
 
   Future<void> _save(List<String> paths) async {
+    if (kIsWeb) return;
     final file = await _configFile;
     await file.parent.create(recursive: true);
     await file.writeAsString(jsonEncode(paths));
@@ -184,7 +198,7 @@ class FileBrowserProvider extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
   List<DirectoryEntry> get commonDirs => _commonDirs;
-  bool get canGoUp => Directory(_currentPath).parent.path != _currentPath;
+  bool get canGoUp => kIsWeb ? false : Directory(_currentPath).parent.path != _currentPath;
   String get currentName => _currentPath.isEmpty
       ? 'ZHub'
       : FileItem.nameFromPath(_currentPath);
@@ -192,7 +206,7 @@ class FileBrowserProvider extends ChangeNotifier {
   FileBrowserProvider() {
     _commonDirs = _service.getCommonDirectories();
     _currentPath = _service.homePath;
-    refresh();
+    if (!kIsWeb) refresh();
   }
 
   Future<void> refresh() async {
@@ -261,6 +275,7 @@ class QuickAccessProvider extends ChangeNotifier {
   }
 
   List<FileItem> _buildItems(List<String> paths) {
+    if (kIsWeb) return [];
     final items = <FileItem>[];
     for (final path in paths) {
       try {
@@ -381,13 +396,26 @@ class _FileBrowserPageState extends State<FileBrowserPage> {
             item: item,
             isPinned: qa.isPinned(item.path),
             onTap: () {
-              if (item.isDirectory) provider.navigateTo(item.path);
+              if (item.isDirectory) {
+                provider.navigateTo(item.path);
+              } else {
+                _openFile(context, item);
+              }
             },
             onLongPress: () => _showContextMenu(context, item),
           );
         },
       ),
     );
+  }
+
+  void _openFile(BuildContext context, FileItem item) {
+    final ext = item.name.split('.').last.toLowerCase();
+    if (ext == 'pdf') {
+      PdfViewerFeature.openPdf(context, item.path, item.name);
+    } else {
+      FileService().openFile(item.path);
+    }
   }
 
   void _showContextMenu(BuildContext context, FileItem item) {
@@ -650,7 +678,14 @@ class QuickAccessPage extends StatelessWidget {
                 icon: const Icon(Icons.close, size: 18),
                 onPressed: () => provider.unpin(item.path),
               ),
-              onTap: () => _showItemInfo(context, item),
+              onTap: () {
+                final ext = item.name.split('.').last.toLowerCase();
+                if (!item.isDirectory && ext == 'pdf') {
+                  PdfViewerFeature.openPdf(context, item.path, item.name);
+                } else {
+                  _showItemInfo(context, item);
+                }
+              },
             ),
           );
         },

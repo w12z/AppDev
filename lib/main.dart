@@ -4,6 +4,7 @@ import 'core/feature_registry.dart';
 import 'core/core_hub.dart';
 import 'features/wifi_transfer/wifi_transfer_feature.dart';
 import 'features/pdf_viewer/pdf_viewer_feature.dart';
+import 'features/pdf_viewer/pdf_provider.dart';
 import 'features/music_player/music_player_feature.dart';
 import 'features/music_player/providers/music_library_provider.dart';
 import 'features/music_player/providers/playlist_provider.dart';
@@ -37,6 +38,7 @@ class ZHubApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => PlaylistProvider()),
         ChangeNotifierProvider.value(value: AudioPlayerService.instance),
         ChangeNotifierProvider.value(value: FeatureRegistry()),
+        ChangeNotifierProvider(create: (_) => PdfProvider()),
       ],
       child: MaterialApp(
         title: 'ZHub',
