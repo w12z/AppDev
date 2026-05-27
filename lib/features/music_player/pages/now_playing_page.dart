@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/music_track.dart';
 import '../services/audio_player_service.dart';
-import 'equalizer_page.dart';
-import '../widgets/output_device_sheet.dart';
+import 'settings_page.dart';
 import '../widgets/playback_controls.dart';
 import '../widgets/progress_bar.dart';
 
@@ -358,15 +357,9 @@ class _NowPlayingPageState extends State<NowPlayingPage>
         const SizedBox(height: 8),
         PlaybackControls(
           isPlaying: player.isPlaying,
-          playMode: player.playMode,
           onPrevious: player.previous,
           onPlayPause: player.togglePlayPause,
           onNext: player.next,
-          onToggleMode: () {
-            const modes = PlayMode.values;
-            final next = modes[(player.playMode.index + 1) % modes.length];
-            player.setPlayMode(next);
-          },
         ),
         const SizedBox(height: 8),
         Padding(
@@ -394,28 +387,13 @@ class _NowPlayingPageState extends State<NowPlayingPage>
               onPressed: () => _showQueue(context),
             ),
             IconButton(
-              icon: const Icon(Icons.equalizer),
-              tooltip: '均衡器',
+              icon: const Icon(Icons.settings),
+              tooltip: '设置',
               onPressed: () {
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const EqualizerPage()),
+                  MaterialPageRoute(builder: (_) => const SettingsPage()),
                 );
               },
-            ),
-            IconButton(
-              icon: const Icon(Icons.speaker),
-              tooltip: '输出设备',
-              onPressed: () {
-                showModalBottomSheet(
-                  context: context,
-                  builder: (_) => const OutputDeviceSheet(),
-                );
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.more_horiz),
-              tooltip: '更多设置',
-              onPressed: () => _showSettings(context),
             ),
           ],
         ),
@@ -535,13 +513,6 @@ class _NowPlayingPageState extends State<NowPlayingPage>
     );
   }
 
-  void _showSettings(BuildContext context) {
-    final player = context.read<AudioPlayerService>();
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => _InterruptModeSheet(player: player),
-    );
-  }
 }
 
 // ── Queue playlist section widget ──
@@ -611,69 +582,6 @@ class _QueuePlaylistSection extends StatelessWidget {
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-// ── Interrupt mode sheet ──
-
-class _InterruptModeSheet extends StatefulWidget {
-  final AudioPlayerService player;
-  const _InterruptModeSheet({required this.player});
-
-  @override
-  State<_InterruptModeSheet> createState() => _InterruptModeSheetState();
-}
-
-class _InterruptModeSheetState extends State<_InterruptModeSheet> {
-  late AudioInterruptMode _selected;
-
-  @override
-  void initState() {
-    super.initState();
-    _selected = widget.player.interruptMode;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Text('音频打断策略', style: theme.textTheme.titleMedium),
-            ),
-            RadioListTile<AudioInterruptMode>(
-              title: const Text('暂停播放'),
-              subtitle: const Text('其他应用发声时暂停'),
-              value: AudioInterruptMode.pause,
-              groupValue: _selected,
-              onChanged: (v) {
-                if (v != null) {
-                  setState(() => _selected = v);
-                  widget.player.setInterruptMode(v);
-                }
-              },
-            ),
-            RadioListTile<AudioInterruptMode>(
-              title: const Text('不中断但降低音量'),
-              subtitle: const Text('降低至 20% 音量继续播放'),
-              value: AudioInterruptMode.duck,
-              groupValue: _selected,
-              onChanged: (v) {
-                if (v != null) {
-                  setState(() => _selected = v);
-                  widget.player.setInterruptMode(v);
-                }
-              },
-            ),
-          ],
-        ),
       ),
     );
   }

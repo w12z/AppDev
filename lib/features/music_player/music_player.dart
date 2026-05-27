@@ -13,4 +13,4 @@ export 'pages/music_library_page.dart';
 export 'pages/now_playing_page.dart';
 
 export 'pages/playlist_detail_page.dart';
-export 'pages/equalizer_page.dart';
+export 'pages/settings_page.dart';

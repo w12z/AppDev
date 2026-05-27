@@ -44,32 +44,27 @@ lib/features/music_player/
 ├── services/
 │   ├── audio_player_service.dart 播放引擎（ChangeNotifier 单例）
 │   ├── audio_routing_service.dart输出设备切换
-│   ├── audio_session_monitor.dart跨平台音频焦点（MethodChannel）
 │   ├── equalizer_service.dart    10段均衡器（全局单例）
 │   ├── music_player_settings.dart集中化用户设置
 │   ├── music_scanner.dart        音乐文件扫描
-│   ├── playlist_repository.dart  SQLite 数据仓库
-│   └── settings_repository.dart  KV 设置存储
+│   └── playlist_repository.dart  SQLite 数据仓库
 ├── models/
 │   ├── eq_preset.dart            均衡器预设模型（9个内置预设）
-│   ├── music_track.dart          曲目模型
-│   └── playlist.dart             歌单模型
+│   └── music_track.dart          曲目模型 + Playlist + QueuePlaylist
 ├── providers/
 │   ├── music_library_provider.dart
 │   └── playlist_provider.dart
 ├── pages/
-│   ├── equalizer_page.dart       均衡器设置页
 │   ├── music_library_page.dart   音乐库主页
 │   ├── now_playing_page.dart     全屏播放器
 │   ├── playlist_detail_page.dart 歌单详情（PageView 滑动切换）
-│   └── playlist_list_page.dart   歌单列表
+│   └── settings_page.dart        统一设置（播放模式/EQ/输出设备/打断策略）
 └── widgets/
     ├── mini_player.dart          底部迷你播放器
     ├── playback_controls.dart    播放控制按钮
     ├── progress_bar.dart         进度条
     ├── track_list_tile.dart      曲目列表项
     ├── add_to_playlist_sheet.dart添加到歌单
-    ├── output_device_sheet.dart  输出设备选择
     ├── eq_band_slider.dart       EQ 频段滑块
     └── eq_preset_manager.dart    EQ 预设管理
 ```
@@ -93,6 +88,34 @@ flutter analyze
 ---
 
 ## 更新日志
+
+### 2026-05-27 — 统一音乐模块设置界面
+
+将音乐播放器 4 处分散的设置入口合并为一个齿轮图标设置页。
+
+**整合（4→1）**
+
+| 原入口 | 原 UI | 整合后 |
+|--------|-------|--------|
+| 播放模式按钮 | PlaybackControls 内循环按钮 | → SettingsPage ChoiceChip |
+| 均衡器图标 | NowPlayingPage → EqualizerPage 独立页面 | → SettingsPage EQ Section |
+| 扬声器图标 | NowPlayingPage → OutputDeviceSheet 底部弹窗 | → SettingsPage 设备列表 Section |
+| more_horiz 图标 | NowPlayingPage → _InterruptModeSheet 底部弹窗 | → SettingsPage 打断策略 Section |
+
+**文件变更**
+
+| 操作 | 文件 |
+|------|------|
+| 🆕 新增 | `pages/settings_page.dart`（440行，4个Section卡片布局） |
+| ✏️ 修改 | `pages/now_playing_page.dart`（底部栏 4 图标→2 图标，删除 _InterruptModeSheet） |
+| ✏️ 修改 | `widgets/playback_controls.dart`（删除播放模式按钮，精简为 prev/play/next） |
+| ❌ 删除 | `pages/equalizer_page.dart` |
+| ❌ 删除 | `widgets/output_device_sheet.dart` |
+| ✏️ 修改 | `music_player.dart`（导出更新） |
+
+**总计：-2 文件，净减少 ~30 行。**
+
+---
 
 ### 2026-05-26 — 全盘扫描 + 多歌单卡片队列 + 文件精简
 

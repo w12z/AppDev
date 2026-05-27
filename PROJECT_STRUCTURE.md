@@ -27,7 +27,34 @@ file_hub/
 │       │   └── pdf_viewer_feature.dart     # AppFeature 实现
 │       └── music_player/
 │           ├── music_player.dart           # barrel 导出
-│           └── music_player_feature.dart   # AppFeature 实现
+│           ├── music_player_feature.dart   # AppFeature 实现
+│           ├── README.md                   # 模块文档
+│           ├── models/
+│           │   ├── music_track.dart        # 曲目模型 + Playlist + QueuePlaylist
+│           │   └── eq_preset.dart          # 均衡器预设 (9内置 + 自定义)
+│           ├── services/
+│           │   ├── audio_player_service.dart # 播放引擎 (ChangeNotifier 单例)
+│           │   ├── audio_routing_service.dart# 输出设备管理
+│           │   ├── equalizer_service.dart    # 10段参数均衡器
+│           │   ├── music_player_settings.dart# 集中化用户设置
+│           │   ├── music_scanner.dart        # 全盘扫描 (Isolate + 增量)
+│           │   └── playlist_repository.dart  # SQLite CRUD + scan_cache
+│           ├── providers/
+│           │   ├── music_library_provider.dart # 曲目库 + 扫描编排 + 重命名联动
+│           │   └── playlist_provider.dart      # 歌单 CRUD + EQ 预设
+│           ├── pages/
+│           │   ├── music_library_page.dart   # 「所有音频」+「我的歌单」
+│           │   ├── now_playing_page.dart     # 全屏播放器 + 卡片堆队列
+│           │   ├── playlist_detail_page.dart # 歌单详情 (PageView 滑动)
+│           │   └── settings_page.dart        # 统一设置 (播放模式/EQ/输出设备/打断)
+│           └── widgets/
+│               ├── mini_player.dart          # 底部迷你播放器
+│               ├── playback_controls.dart    # 播放/暂停/上下首
+│               ├── progress_bar.dart         # 进度条 (可拖拽)
+│               ├── track_list_tile.dart      # 曲目列表项
+│               ├── add_to_playlist_sheet.dart# 添加曲目到歌单
+│               ├── eq_band_slider.dart       # EQ 频段滑块
+│               └── eq_preset_manager.dart    # EQ 预设管理
 │
 ├── test/
 │   └── widget_test.dart
