@@ -89,6 +89,22 @@ flutter analyze
 
 ## 更新日志
 
+### 2026-05-27 — 合并 main + 修复 CMake 构建
+
+**合并 main 分支新增**
+- PDF 查看器模块（`pdfx` + `pdf_viewer_body_native/web` + `PdfProvider`）
+- `core_hub.dart` / `file_item.dart` 更新
+- Web 平台 PDF 渲染（`pdf.min.mjs` + `pdf.worker.mjs`）
+
+**漏洞修复**
+
+| # | 问题 | 修复 |
+|---|------|------|
+| ① | pdfx 插件 `DownloadProject.cmake` 指定 `cmake_minimum_required(VERSION 2.8.12)`，CMake 4.0 已移除 < 3.5 兼容 | patch 为 `VERSION 3.10`（ephemeral + pub cache 双份） |
+| ② | 同上问题导致 pdfium 下载步骤 CMake 配置直接失败 | 项目 `windows/CMakeLists.txt` 新增 `CMAKE_POLICY_VERSION_MINIMUM 3.5` 安全网 |
+
+---
+
 ### 2026-05-27 — 统一音乐模块设置界面
 
 将音乐播放器 4 处分散的设置入口合并为一个齿轮图标设置页。
